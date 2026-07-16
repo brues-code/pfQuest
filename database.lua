@@ -28,7 +28,7 @@ pfDatabase = { icons = {} }
 
 local loc = GetLocale()
 local dbs =
-  { "items", "quests", "quests-itemreq", "objects", "units", "zones", "professions", "areatrigger", "refloot" }
+  { "items", "quests", "quests-itemreq", "objects", "units", "zones", "areatrigger", "refloot" }
 local noloc = { items = true, quests = true, objects = true, units = true }
 
 pfDB.locales = {
@@ -257,7 +257,7 @@ if isempty(pfDB["quests"]["loc"]) then
 end
 
 -- add database shortcuts
-local items, units, objects, quests, refloot, itemreq, professions
+local items, units, objects, quests, refloot, itemreq
 pfDatabase.Reload = function()
   items = pfDB["items"]["data"]
   units = pfDB["units"]["data"]
@@ -265,7 +265,6 @@ pfDatabase.Reload = function()
   quests = pfDB["quests"]["data"]
   refloot = pfDB["refloot"]["data"]
   itemreq = pfDB["quests-itemreq"]["data"]
-  professions = pfDB["professions"]["loc"]
 end
 
 pfDatabase.Reload()
@@ -580,20 +579,16 @@ function pfDatabase:ShowExtendedTooltip(id, tooltip, parent, anchor, offx, offy)
 end
 
 -- GetPlayerSkill
--- Returns false if the player doesn't have the required skill, or their rank if they do
+-- Returns the player's current rank in the given SkillLine.dbc id, or false if
+-- they haven't learned it. Read live from the client via ClassicAPI's
+-- C_SpellBook.GetSkillLineRank(skillLineID) -> curRank, maxRank, modifier (nil
+-- when unlearned), which replaces the old professions name table + skill-window
+-- name scan.
 function pfDatabase:GetPlayerSkill(skill)
-  if not professions[skill] then
+  if not (C_SpellBook and C_SpellBook.GetSkillLineRank) then
     return false
   end
-
-  for i = 0, GetNumSkillLines() do
-    local skillName, _, _, skillRank = GetSkillLineInfo(i)
-    if skillName == professions[skill] then
-      return skillRank
-    end
-  end
-
-  return false
+  return (C_SpellBook.GetSkillLineRank(skill)) or false
 end
 
 -- GetBitByRace
@@ -1643,27 +1638,12 @@ function pfDatabase:QuestFilter(id, plevel, pclass, prace)
   return true
 end
 
--- SearchQuests skill cache: built once per SearchQuests call, used by QuestFilter
--- via pfDatabase:GetPlayerSkillCached(). Avoids scanning all skill lines per quest.
-pfDatabase.skillcache = {}
-function pfDatabase:BuildSkillCache()
-  for k in pairs(self.skillcache) do
-    self.skillcache[k] = nil
-  end
-  for i = 0, GetNumSkillLines() do
-    local skillName, _, _, skillRank = GetSkillLineInfo(i)
-    if skillName then
-      self.skillcache[skillName] = skillRank
-    end
-  end
-end
-
+-- GetPlayerSkillCached
+-- Kept for call-site compatibility (QuestFilter). Skill rank is now a cheap
+-- id-keyed client lookup, so the old per-scan name cache (BuildSkillCache) is
+-- gone.
 function pfDatabase:GetPlayerSkillCached(skill)
-  if not professions[skill] then
-    return false
-  end
-  local rank = self.skillcache[professions[skill]]
-  return rank or false
+  return pfDatabase:GetPlayerSkill(skill)
 end
 
 -- SearchQuests incremental node cache.
@@ -1696,9 +1676,6 @@ function pfDatabase:SearchQuests(meta, maps)
   local prace = pfDatabase:GetBitByRace(race)
   local _, class = UnitClass("player")
   local pclass = pfDatabase:GetBitByClass(class)
-
-  -- build skill cache once for this scan (used by QuestFilter / GetPlayerSkillCached)
-  pfDatabase:BuildSkillCache()
 
   local t_filter, t_nodes, t_start = 0, 0, GetTime()
 
