@@ -68,6 +68,11 @@ local rgbcache = setmetatable({}, { __mode = "kv" })
 -- the API and cache `false` so they're only queried once.
 local minimap_sizes = setmetatable(pfDB["minimap"], {
   __index = function(t, mapID)
+    -- mapID is nil when the current zone can't be resolved (GetMapIDByName
+    -- miss); return false without caching (rawset errors on a nil key).
+    if not mapID then
+      return false
+    end
     local w, h
     if C_Map and C_Map.GetMapWorldSize then
       w, h = C_Map.GetMapWorldSize(mapID)
