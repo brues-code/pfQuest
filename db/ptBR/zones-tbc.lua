@@ -1,1 +1,0 @@
-pfDB["zones"]["ptBR-tbc"] = {}

@@ -27,13 +27,9 @@ local function ShowTooltip()
     end
 
     if this.node and this.node.questid then
-      if
-        pfDB["quests"]
-        and pfDB["quests"]["loc"]
-        and pfDB["quests"]["loc"][this.node.questid]
-        and pfDB["quests"]["loc"][this.node.questid]["O"]
-      then
-        GameTooltip:AddLine(pfDatabase:FormatQuestText(pfDB["quests"]["loc"][this.node.questid]["O"]), 1, 1, 1, 1)
+      local objtext = pfDatabase:GetQuestText(this.node.questid, "O")
+      if objtext then
+        GameTooltip:AddLine(pfDatabase:FormatQuestText(objtext), 1,1,1,1)
         GameTooltip:AddLine(" ")
       end
 

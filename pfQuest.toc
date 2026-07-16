@@ -5,7 +5,6 @@
 ## Notes-ruRU: Облегченный помощник заданий и база данных
 ## Version: 8.0.0
 ## OptionalDeps: pfUI
-## SavedVariables: pfQuest_questcache
 ## SavedVariablesPerCharacter: pfQuest_config, pfBrowser_fav, pfQuest_history, pfQuest_colors, pfQuest_server, pfQuest_track
 
 init\data.xml

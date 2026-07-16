@@ -6,7 +6,7 @@ local pairs, ipairs, next = pairs, ipairs, next
 local strfind, strlower, strsub = strfind, strlower, strsub
 local format = string.format
 local min, max, abs = math.min, math.max, math.abs
-local sqrt, sin, cos = sqrt or math.sqrt, sin or math.sin, cos or math.cos
+local sqrt = sqrt or math.sqrt
 local floor, ceil = floor or math.floor, ceil or math.ceil
 local getn, insert = table.getn, table.insert
 local tostring, tonumber, type, unpack = tostring, tonumber, type, unpack
@@ -233,18 +233,17 @@ end
 
 pfMap = CreateFrame("Frame", "pfQuestMap", WorldFrame)
 pfMap.str2rgb = str2rgb
-pfMap.tooltips = {}
+pfMap.tooltips_unit = {}
+pfMap.tooltips_object = {}
 pfMap.nodes = {}
 pfMap.pins = {}
 pfMap.mpins = {}
 pfMap.drawlayer = Minimap
 pfMap.unifiedcache = unifiedcache
 
--- Reverse indexes for O(1) DeleteNode lookups.
+-- Reverse index for O(1) DeleteNode lookups.
 -- titleIndex[addon][title][map][coords] = true  — set by AddNode
--- tooltipIndex[title][spawn] = true             — set by AddNode
 pfMap.titleIndex = {}
-pfMap.tooltipIndex = {}
 
 -- Set of node tables that have been modified since the last UpdateNodes call.
 -- Keyed by node table reference so the node table itself stays clean.
@@ -276,15 +275,28 @@ pfMap.tooltip:SetScript("OnShow", function()
     return
   end
 
-  local name = getglobal("GameTooltipTextLeft1") and getglobal("GameTooltipTextLeft1"):GetText() or "__NONE__"
   local zone = pfMap:GetMapID(GetCurrentMapContinent(), GetCurrentMapZone())
 
-  -- remove all colors from received tooltip text
-  name = string.gsub(name, "|c%x%x%x%x%x%x%x%x", "")
-  name = string.gsub(name, "|r", "")
+  -- units: identify by the engine-provided display name. Creature IDs from
+  -- UnitGUID are unreliable on this realm (many mobs share an id), so we
+  -- key by name. GetUnitGUID's first return is the same clean string the
+  -- tooltip header shows, with no color-code decoration to strip.
+  local uname = GameTooltip:GetUnitGUID()
+  if uname and pfMap.tooltips_unit[uname] then
+    for title, obj in pairs(pfMap.tooltips_unit[uname]) do
+      if obj[zone] then
+        pfMap:ShowTooltip(obj[zone], GameTooltip)
+        GameTooltip:Show()
+      end
+    end
+    return
+  end
 
-  if pfMap.tooltips[name] and pfMap.tooltips[name] then
-    for title, obj in pairs(pfMap.tooltips[name]) do
+  -- gameobjects: ID is sourced from the spawn-packet template field rather
+  -- than parsed out of a GUID, so it stays trustworthy here
+  local _, oid = GameTooltip:GetGameObject()
+  if oid and pfMap.tooltips_object[oid] then
+    for title, obj in pairs(pfMap.tooltips_object[oid]) do
       if obj[zone] then
         pfMap:ShowTooltip(obj[zone], GameTooltip)
         GameTooltip:Show()
@@ -353,11 +365,18 @@ function pfMap:ShowTooltip(meta, tooltip)
         if objectives then
           for i = 1, objectives, 1 do
             local text, type, finished = GetQuestLogLeaderBoard(i, qid)
+            local objid = GetQuestLogLeaderBoardID(i, qid)
 
             if type == "monster" then
               -- kill
-              local i, j, monsterName, objNum, objNeeded =
-                strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
+              local _, _, monsterName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
+              -- match by name: realm NPC IDs and pfDB IDs can disagree on
+              -- custom realms (we already key the unit tooltip lookup by name
+              -- for the same reason). The objective text and meta["spawn"]
+              -- both go through the same localized name path, so they agree.
+              -- "monster" type also covers non-kill objectives whose text
+              -- doesn't fit the slain template; skipped via the monsterName
+              -- guard.
               if monsterName and meta["spawn"] == monsterName then
                 catch_obj = true
                 local r, g, b = pfMap.tooltip:GetColor(objNum, objNeeded)
@@ -640,7 +659,39 @@ function pfMap:AddNode(meta)
     pfMap.nodes[addon][map][coords] = {}
   end
 
-  -- skip early on existing nodes
+  -- create the combined data snapshot up-front so the tooltip index below has
+  -- a value to point at even when the node-dedup short-circuit returns early.
+  -- sindex already discriminates by spawn name, so each mob sharing a coord
+  -- with another (e.g. the four Zanzil mobs in Stranglethorn at id 1488-1491)
+  -- still gets its own snapshot.
+  if not similar_nodes[sindex] then
+    similar_nodes[sindex] = {}
+    for key, val in pairs(meta) do similar_nodes[sindex][key] = val end
+    similar_nodes[sindex].item = { [1] = item }
+  end
+
+  -- Index for the hover-tooltip lookup. Must precede the early-returns below:
+  -- multiple mobs frequently share spawn coords + quest title for the same
+  -- item objective, and we want each of them to resolve when hovered.
+  --   units   -> keyed by display name; creature IDs from UnitGUID are
+  --              unreliable on this realm so we match by name instead
+  --   objects -> keyed by template id; GetGameObject's id is sourced from
+  --              the spawn packet rather than a GUID and stays trustworthy
+  if title then
+    if spawn and meta["spawntype"] == pfQuest_Loc["Unit"] then
+      pfMap.tooltips_unit[spawn] = pfMap.tooltips_unit[spawn] or {}
+      pfMap.tooltips_unit[spawn][title] = pfMap.tooltips_unit[spawn][title] or {}
+      pfMap.tooltips_unit[spawn][title][map] = pfMap.tooltips_unit[spawn][title][map] or similar_nodes[sindex]
+    elseif meta["spawnid"] and meta["spawntype"] == pfQuest_Loc["Object"] then
+      local spawnid = meta["spawnid"]
+      pfMap.tooltips_object[spawnid] = pfMap.tooltips_object[spawnid] or {}
+      pfMap.tooltips_object[spawnid][title] = pfMap.tooltips_object[spawnid][title] or {}
+      pfMap.tooltips_object[spawnid][title][map] = pfMap.tooltips_object[spawnid][title][map] or similar_nodes[sindex]
+    end
+  end
+
+  -- skip early on existing nodes (map drawing only — tooltip index above is
+  -- already populated)
   if pfMap.nodes[addon][map][coords][title] then
     if item and table.getn(pfMap.nodes[addon][map][coords][title].item) > 0 then
       -- check if item already exists
@@ -664,15 +715,6 @@ function pfMap:AddNode(meta)
       -- identical node already exists, exit here
       return
     end
-  end
-
-  -- create new combined data node from given meta data
-  if not similar_nodes[sindex] then
-    similar_nodes[sindex] = {}
-    for key, val in pairs(meta) do
-      similar_nodes[sindex][key] = val
-    end
-    similar_nodes[sindex].item = { [1] = item }
   end
 
   -- set current node to combined node
@@ -718,19 +760,6 @@ function pfMap:AddNode(meta)
     table.insert(unifiedcache[title][map][node_index].coords, { x, y })
   end
 
-  -- add to gametooltips
-  if spawn and title then
-    pfMap.tooltips[spawn] = pfMap.tooltips[spawn] or {}
-    pfMap.tooltips[spawn][title] = pfMap.tooltips[spawn][title] or {}
-    pfMap.tooltips[spawn][title][map] = pfMap.tooltips[spawn][title][map] or similar_nodes[sindex]
-
-    -- maintain reverse tooltip index for O(1) DeleteNode
-    if not pfMap.tooltipIndex[title] then
-      pfMap.tooltipIndex[title] = {}
-    end
-    pfMap.tooltipIndex[title][spawn] = true
-  end
-
   pfMap.queue_update = GetTime()
 end
 
@@ -753,32 +782,25 @@ end
 function pfMap:DeleteNode(addon, title)
   if not addon then
     -- wipe everything
-    pfMap.tooltips = {}
+    pfMap.tooltips_unit = {}
+    pfMap.tooltips_object = {}
     pfMap.nodes = {}
     pfMap.titleIndex = {}
-    pfMap.tooltipIndex = {}
     pfMap.dirtyNodes = {}
     pfMap.dirtyMaps = {}
   elseif not title then
-    -- wipe all nodes for this addon; clean up both reverse indexes
-    if pfMap.titleIndex[addon] then
-      for t, maps in pairs(pfMap.titleIndex[addon]) do
-        -- clean tooltipIndex entries that belonged to this addon's titles
-        local spawns = pfMap.tooltipIndex[t]
-        if spawns then
-          for spawn in pairs(spawns) do
-            if pfMap.tooltips[spawn] then
-              pfMap.tooltips[spawn][t] = nil
-              if IsEmpty(pfMap.tooltips[spawn]) then
-                pfMap.tooltips[spawn] = nil
-              end
-            end
-          end
-          pfMap.tooltipIndex[t] = nil
-        end
+    -- wipe all nodes for this addon; drop its entries from both tooltip indexes
+    for mk, mv in pairs(pfMap.tooltips_unit) do
+      for tk, tv in pairs(mv) do
+        if tv.addon == addon then pfMap.tooltips_unit[mk][tk] = nil end
       end
-      pfMap.titleIndex[addon] = nil
     end
+    for mk, mv in pairs(pfMap.tooltips_object) do
+      for tk, tv in pairs(mv) do
+        if tv.addon == addon then pfMap.tooltips_object[mk][tk] = nil end
+      end
+    end
+    pfMap.titleIndex[addon] = nil
     pfMap.nodes[addon] = nil
   elseif pfMap.titleIndex[addon] and pfMap.titleIndex[addon][title] then
     -- fast path: use reverse index to find exactly which (map, coords) to clear
@@ -800,18 +822,12 @@ function pfMap:DeleteNode(addon, title)
     end
     pfMap.titleIndex[addon][title] = nil
 
-    -- clean up tooltip entries for this title using the reverse tooltip index
-    local spawns = pfMap.tooltipIndex[title]
-    if spawns then
-      for spawn in pairs(spawns) do
-        if pfMap.tooltips[spawn] then
-          pfMap.tooltips[spawn][title] = nil
-          if IsEmpty(pfMap.tooltips[spawn]) then
-            pfMap.tooltips[spawn] = nil
-          end
-        end
-      end
-      pfMap.tooltipIndex[title] = nil
+    -- drop this title's entries from both tooltip indexes
+    for mk, mv in pairs(pfMap.tooltips_unit) do
+      if mv[title] then pfMap.tooltips_unit[mk][title] = nil end
+    end
+    for mk, mv in pairs(pfMap.tooltips_object) do
+      if mv[title] then pfMap.tooltips_object[mk][title] = nil end
     end
   end
 
@@ -870,11 +886,6 @@ function pfMap:NodeClick()
 end
 
 function pfMap:NodeEnter()
-  -- wotlk: need to disable blop tooltips first
-  if compat.client >= 30300 then
-    WorldMapPOIFrame.allowBlobTooltip = false
-  end
-
   local tooltip = this:GetParent() == WorldMapButton and WorldMapTooltip or GameTooltip
   tooltip:SetOwner(this, "ANCHOR_LEFT")
   this.spawn = this.spawn or UNKNOWN
@@ -915,11 +926,6 @@ function pfMap:NodeEnter()
 end
 
 function pfMap:NodeLeave()
-  -- wotlk: re-enable blop tooltips
-  if compat.client >= 30300 then
-    WorldMapPOIFrame.allowBlobTooltip = true
-  end
-
   local tooltip = this:GetParent() == WorldMapButton and WorldMapTooltip or GameTooltip
   tooltip:Hide()
   pfMap.highlight = nil
@@ -1321,16 +1327,6 @@ function pfMap:UpdateMinimap()
         local xPos = (x - xPlayer) * xDraw
         local yPos = (y - yPlayer) * yDraw
 
-        if pfQuestCompat.rotateMinimap then
-          -- TODO: this part is broken and does not work yet.
-          local sinFacing = sin(pfQuestCompat.GetPlayerFacing())
-          local cosFacing = cos(pfQuestCompat.GetPlayerFacing())
-
-          local dx, dy = xPos, -yPos
-          xPos = (dx * cosFacing) + (dy * sinFacing)
-          yPos = -((-dx * sinFacing) + (dy * cosFacing))
-        end
-
         local display = nil
         local distance = sqrt(xPos * xPos + yPos * yPos)
 
@@ -1537,37 +1533,6 @@ pfMap:SetScript("OnUpdate", function()
     hidecluster = nil
   end
 end)
-
--- only hook for 3.3.5
-if compat.client >= 30300 then
-  -- Initialize a variable to track the previous clicked title
-  local previousTitle = nil
-  -- Highlight Map Quest Log Selection Nodes
-  local pfHookWorldMapQuestFrame_OnMouseUp = WorldMapQuestFrame_OnMouseUp
-  WorldMapQuestFrame_OnMouseUp = function(self)
-    pfHookWorldMapQuestFrame_OnMouseUp(self)
-    WorldMapBlobFrame:Hide()
-    WorldMapFrame_ClearQuestPOIs()
-    if not IsShiftKeyDown() then
-      pfMap.highlight = nil
-      local questLogIndex = GetQuestLogSelection()
-      local title = GetQuestLogTitle(questLogIndex)
-
-      if title then
-        if previousTitle == title then
-          -- Reset the highlight if the same title is clicked again
-          pfMap.highlight = nil
-          previousTitle = nil
-        else
-          -- Logic for highlighting nodes associated with the clicked quest
-          pfMap.highlight = title
-          previousTitle = title
-          pfMap.queue_update = GetTime()
-        end
-      end
-    end
-  end
-end
 
 -- Resize icons on map zoom change
 function pfMap:OnMapScaleChanged(frame, scale, hookedfunction)

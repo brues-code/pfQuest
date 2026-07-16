@@ -1,8 +1,6 @@
 -- multi api compat
 local compat = pfQuestCompat
-local _, _, _, client = GetBuildInfo()
-client = client or 11200
-local _G = client == 11200 and getfenv(0) or _G
+local _G = getfenv(0)
 
 -- Performance: cache frequently-used globals
 local pairs, ipairs, next = pairs, ipairs, next
@@ -126,13 +124,7 @@ ExpandQuestHeader = function(index)
   return _ExpandQuestHeader(index)
 end
 
-if client >= 30300 then
-  pfQuest.dburl = "https://www.wowhead.com/wotlk/quest="
-elseif client >= 20400 then
-  pfQuest.dburl = "https://www.wowhead.com/tbc/quest="
-else
-  pfQuest.dburl = "https://www.wowhead.com/classic/quest="
-end
+pfQuest.dburl = "https://www.wowhead.com/classic/quest="
 
 function pfQuest:Debug(msg)
   -- only show debug output if enabled
@@ -199,7 +191,6 @@ end
 
 pfQuest.queue = {}
 pfQuest.queueCount = 0 -- Track queue size to avoid O(n) tsize() calls
-pfQuest.abandon = ""
 pfQuest.questlog = {}
 pfQuest.questlog_tmp = {}
 
@@ -213,13 +204,14 @@ local skillstate = ""
 pfQuest:RegisterEvent("QUEST_WATCH_UPDATE")
 pfQuest:RegisterEvent("QUEST_LOG_UPDATE")
 pfQuest:RegisterEvent("QUEST_FINISHED")
+pfQuest:RegisterEvent("QUEST_TURNED_IN")
 pfQuest:RegisterEvent("PLAYER_LEVEL_UP")
 pfQuest:RegisterEvent("PLAYER_ENTERING_WORLD")
 pfQuest:RegisterEvent("SKILL_LINES_CHANGED")
 pfQuest:RegisterEvent("ADDON_LOADED")
 pfQuest:SetScript("OnEvent", function()
   if event == "ADDON_LOADED" then
-    if arg1 == "pfQuest" or arg1 == "pfQuest-tbc" or arg1 == "pfQuest-wotlk" then
+    if arg1 == "pfQuest" then
       -- Clean up legacy SavedVariable from an earlier version of this fix that
       -- accidentally stored collapsedZones in pfQuest_track, causing database.lua
       -- to crash when iterating that table as {query, meta} tracking pairs.
@@ -257,6 +249,13 @@ pfQuest:SetScript("OnEvent", function()
     end
   elseif event == "PLAYER_LEVEL_UP" or event == "PLAYER_ENTERING_WORLD" then
     pfQuest.updateQuestGivers = true
+  elseif event == "QUEST_TURNED_IN" then
+    -- authoritative completion signal from the engine; the questlog REMOVE
+    -- path no longer has to guess turn-in vs. abandon by name
+    if arg1 then
+      pfQuest_history[arg1] = { time(), UnitLevel("player") }
+    end
+    pfQuest.updateQuestLog = true
   else
     pfQuest.updateQuestLog = true
   end
@@ -349,12 +348,8 @@ pfQuest:SetScript("OnUpdate", function()
     if entry[4] == "REMOVE" then
       pfQuest:Debug("|cffff5555Remove Quest: " .. entry[1] .. " (" .. entry[2] .. ")")
 
-      -- write pfQuest.questlog history
-      if entry[1] == pfQuest.abandon then
-        pfQuest_history[entry[2]] = nil
-      else
-        pfQuest_history[entry[2]] = { time(), UnitLevel("player") }
-      end
+      -- pfQuest_history is now written exclusively by QUEST_TURNED_IN, so this
+      -- branch just tears down the map nodes for the missing quest
 
       -- remove from collapsed tracking so the SavedVar doesn't accumulate
       -- stale questids from quests that were turned in or abandoned
@@ -375,8 +370,6 @@ pfQuest:SetScript("OnUpdate", function()
         end
         pfQuest:Debug(format("|cffffff00TIMER DeleteNode(REMOVE): %.4fs", GetTime() - t0))
       end
-
-      pfQuest.abandon = ""
     else
       if entry[4] == "NEW" then
         pfQuest:Debug("|cff55ff55New Quest: " .. entry[1] .. " (" .. entry[2] .. ")")
@@ -827,15 +820,9 @@ function pfQuest:AddWorldMapIntegration()
     end
 
     UIDropDownMenu_Initialize(pfQuest.mapButton, CreateEntries)
-    if client >= 30300 then
-      UIDropDownMenu_SetWidth(pfQuest.mapButton, 120)
-      UIDropDownMenu_SetButtonWidth(pfQuest.mapButton, 125)
-      UIDropDownMenu_JustifyText(pfQuest.mapButton, "RIGHT")
-    else
-      UIDropDownMenu_SetWidth(120, pfQuest.mapButton)
-      UIDropDownMenu_SetButtonWidth(125, pfQuest.mapButton)
-      UIDropDownMenu_JustifyText("RIGHT", pfQuest.mapButton)
-    end
+    UIDropDownMenu_SetWidth(120, pfQuest.mapButton)
+    UIDropDownMenu_SetButtonWidth(125, pfQuest.mapButton)
+    UIDropDownMenu_JustifyText("RIGHT", pfQuest.mapButton)
     UIDropDownMenu_SetSelectedID(pfQuest.mapButton, pfQuest.mapButton.current)
   end
 end
@@ -866,13 +853,6 @@ AddQuestWatch = function(questIndex)
   return ret
 end
 
--- Save the abandoned questname to remove from history
-local HookAbandonQuest = AbandonQuest
-AbandonQuest = function()
-  pfQuest.abandon = GetAbandonQuestName()
-  HookAbandonQuest()
-end
-
 local function UpdateQuestLevel(button, id)
   local title, level, tag, header = compat.GetQuestLogTitle(id)
   if header or not title then
@@ -891,14 +871,8 @@ QuestLog_Update = function()
   pfHookQuestLog_Update()
 
   if pfQuest_config["questloglevel"] == "1" then
-    if client >= 30300 then
-      for i, button in pairs(QuestLogScrollFrame.buttons) do
-        UpdateQuestLevel(button, button:GetID())
-      end
-    else
-      for i = 1, QUESTS_DISPLAYED, 1 do
-        UpdateQuestLevel(_G["QuestLogTitle" .. i], i + FauxScrollFrame_GetOffset(QuestLogListScrollFrame))
-      end
+    for i = 1, QUESTS_DISPLAYED, 1 do
+      UpdateQuestLevel(_G["QuestLogTitle" .. i], i + FauxScrollFrame_GetOffset(QuestLogListScrollFrame))
     end
   end
 
@@ -995,10 +969,12 @@ if not GetQuestLink then -- Allow to send questlinks from questlog
       end
 
       -- read and set title
-      if id and id > 0 and pfDB["quests"]["loc"][id] then
-        local questlevel = tonumber(pfDB["quests"]["data"][id]["lvl"])
+      local questtitle = id and id > 0 and pfDatabase:GetQuestText(id, "T") or nil
+      if questtitle then
+        local data = pfDB["quests"]["data"][id]
+        local questlevel = data and tonumber(data["lvl"]) or 0
         local color = pfQuestCompat.GetDifficultyColor(questlevel)
-        ItemRefTooltip:AddLine(pfDB["quests"]["loc"][id].T, color.r, color.g, color.b)
+        ItemRefTooltip:AddLine(questtitle, color.r, color.g, color.b)
       elseif hasTitle then
         ItemRefTooltip:AddLine(questTitle, 1, 1, 0)
       end
@@ -1016,25 +992,29 @@ if not GetQuestLink then -- Allow to send questlinks from questlog
       end
 
       -- add database entries if existing
-      if pfDB["quests"]["loc"][id] then
-        if pfDB["quests"]["loc"][id]["O"] then
-          ItemRefTooltip:AddLine(pfDatabase:FormatQuestText(pfDB["quests"]["loc"][id]["O"]), 1, 1, 1, true)
+      local objtext = id and pfDatabase:GetQuestText(id, "O") or nil
+      local desctext = id and pfDatabase:GetQuestText(id, "D") or nil
+
+      if objtext then
+        ItemRefTooltip:AddLine(pfDatabase:FormatQuestText(objtext), 1,1,1,true)
+      end
+
+      if objtext and desctext then
+        ItemRefTooltip:AddLine(" ", 0,0,0)
+      end
+
+      if desctext then
+        ItemRefTooltip:AddLine(pfDatabase:FormatQuestText(desctext), .8,.8,.8,true)
+      end
+
+      local data = id and pfDB["quests"]["data"][id] or nil
+      if data then
+        if data["lvl"] or data["min"] then
+          ItemRefTooltip:AddLine(" ", 0,0,0)
         end
 
-        if pfDB["quests"]["loc"][id]["O"] and pfDB["quests"]["loc"][id]["D"] then
-          ItemRefTooltip:AddLine(" ", 0, 0, 0)
-        end
-
-        if pfDB["quests"]["loc"][id]["D"] then
-          ItemRefTooltip:AddLine(pfDatabase:FormatQuestText(pfDB["quests"]["loc"][id]["D"]), 0.8, 0.8, 0.8, true)
-        end
-
-        if pfDB["quests"]["data"][id]["lvl"] or pfDB["quests"]["data"][id]["min"] then
-          ItemRefTooltip:AddLine(" ", 0, 0, 0)
-        end
-
-        if pfDB["quests"]["data"][id]["min"] then
-          local questlevel = tonumber(pfDB["quests"]["data"][id]["min"])
+        if data["min"] then
+          local questlevel = tonumber(data["min"])
           local color = pfQuestCompat.GetDifficultyColor(questlevel)
           ItemRefTooltip:AddLine(
             "|cffffffff" .. pfQuest_Loc["Required Level"] .. ": |r" .. questlevel,
@@ -1044,8 +1024,8 @@ if not GetQuestLink then -- Allow to send questlinks from questlog
           )
         end
 
-        if pfDB["quests"]["data"][id]["lvl"] then
-          local questlevel = tonumber(pfDB["quests"]["data"][id]["lvl"])
+        if data["lvl"] then
+          local questlevel = tonumber(data["lvl"])
           local color = pfQuestCompat.GetDifficultyColor(questlevel)
           ItemRefTooltip:AddLine(
             "|cffffffff" .. pfQuest_Loc["Quest Level"] .. ": |r" .. questlevel,

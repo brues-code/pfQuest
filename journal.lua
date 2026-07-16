@@ -118,7 +118,7 @@ local function UpdateEntry(self, index)
     self[index]:Show()
   elseif self[index].id then
     local qid = tonumber(self[index].id) or UNKNOWN
-    local name = pfDB["quests"]["loc"][self[index].id] and pfDB["quests"]["loc"][self[index].id]["T"] or self[index].id
+    local name = pfDatabase:GetQuestText(self[index].id, "T") or self[index].id
     local log = pfQuest_history[self[index].id][1]
     local level = pfQuest_history[self[index].id][2]
     self[index].text:SetText(

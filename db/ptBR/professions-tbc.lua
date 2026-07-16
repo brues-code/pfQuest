@@ -1,1 +1,0 @@
-pfDB["professions"]["ptBR-tbc"] = {}

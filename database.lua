@@ -43,17 +43,6 @@ pfDB.locales = {
   ["ptBR"] = "Portuguese",
 }
 
--- Patch databases to further expansions
-local function patchtable(base, diff)
-  for k, v in pairs(diff) do
-    if type(v) == "string" and v == "_" then
-      base[k] = nil
-    else
-      base[k] = v
-    end
-  end
-end
-
 -- Return the best cluster point for a coordiante table
 local best, neighbors = { index = 1, neighbors = 0 }, 0
 local cache, cacheindex = {}, nil
@@ -104,118 +93,6 @@ local function isempty(tbl)
   return next(tbl) == nil
 end
 
--- Returns the levenshtein distance between two strings
--- based on: https://gist.github.com/Badgerati/3261142
-local len1, len2, cost, lev_best
-local levcache = {}
-local levcache_count = 0
-local LEVCACHE_MAX = 500
-
--- Pre-allocate matrix for strings up to 100 chars (reused across calls)
-local lev_matrix = {}
-for i = 0, 100 do
-  lev_matrix[i] = {}
-end
-
-local function lev(str1, str2, limit)
-  local key = str1 .. ":" .. str2
-  if levcache[key] then
-    return levcache[key]
-  end
-
-  len1, len2, cost = strlen(str1), strlen(str2), 0
-
-  -- abort early on empty strings
-  if len1 == 0 then
-    return len2
-  elseif len2 == 0 then
-    return len1
-  elseif str1 == str2 then
-    return 0
-  end
-
-  -- initialise the base matrix (reuse pre-allocated matrix)
-  local matrix = lev_matrix
-  for i = 0, len1, 1 do
-    if not matrix[i] then
-      matrix[i] = {}
-    end
-    matrix[i][0] = i
-    for j = 1, len2 do
-      matrix[i][j] = nil
-    end
-  end
-
-  for j = 0, len2, 1 do
-    matrix[0][j] = j
-  end
-
-  -- levenshtein algorithm
-  for i = 1, len1, 1 do
-    lev_best = limit
-
-    for j = 1, len2, 1 do
-      cost = string.byte(str1, i) == string.byte(str2, j) and 0 or 1
-      matrix[i][j] = min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost)
-
-      if limit and matrix[i][j] < limit then
-        lev_best = matrix[i][j]
-      end
-    end
-
-    if limit and lev_best >= limit then
-      -- evict cache if too large before adding
-      if levcache_count >= LEVCACHE_MAX then
-        levcache = {}
-        levcache_count = 0
-      end
-      levcache[key] = limit
-      levcache_count = levcache_count + 1
-      return limit
-    end
-  end
-
-  -- evict cache if too large before adding
-  if levcache_count >= LEVCACHE_MAX then
-    levcache = {}
-    levcache_count = 0
-  end
-
-  -- return the levenshtein distance
-  levcache[key] = matrix[len1][len2]
-  levcache_count = levcache_count + 1
-  return matrix[len1][len2]
-end
-
-local loc_core, loc_update
-for _, exp in pairs({ "-tbc", "-wotlk" }) do
-  for _, db in pairs(dbs) do
-    if pfDB[db]["data" .. exp] then
-      patchtable(pfDB[db]["data"], pfDB[db]["data" .. exp])
-    end
-
-    for loc, _ in pairs(pfDB.locales) do
-      if pfDB[db][loc] and pfDB[db][loc .. exp] then
-        loc_update = pfDB[db][loc .. exp] or pfDB[db]["enUS" .. exp]
-        patchtable(pfDB[db][loc], loc_update)
-      end
-    end
-  end
-
-  loc_core = pfDB["professions"][loc] or pfDB["professions"]["enUS"]
-  loc_update = pfDB["professions"][loc .. exp] or pfDB["professions"]["enUS" .. exp]
-  if loc_update then
-    patchtable(loc_core, loc_update)
-  end
-
-  if pfDB["minimap" .. exp] then
-    patchtable(pfDB["minimap"], pfDB["minimap" .. exp])
-  end
-  if pfDB["meta" .. exp] then
-    patchtable(pfDB["meta"], pfDB["meta" .. exp])
-  end
-end
-
 -- detect installed locales
 for key, name in pairs(pfDB.locales) do
   if not pfDB["quests"][key] then
@@ -249,22 +126,7 @@ for id, db in pairs(dbs) do
   if pfDB[db]["enUS"] and pfDB[db]["enUS"] ~= pfDB[db]["loc"] then
     pfDB[db]["enUS"] = nil
   end
-  -- Free expansion patch data (already merged into base tables)
-  pfDB[db]["data-tbc"] = nil
-  pfDB[db]["data-wotlk"] = nil
-  for locale in pairs(pfDB.locales) do
-    pfDB[db][locale .. "-tbc"] = nil
-    pfDB[db][locale .. "-wotlk"] = nil
-  end
-  pfDB[db]["enUS-tbc"] = nil
-  pfDB[db]["enUS-wotlk"] = nil
 end
-
--- Free expansion meta/minimap tables (already merged)
-pfDB["minimap-tbc"] = nil
-pfDB["minimap-wotlk"] = nil
-pfDB["meta-tbc"] = nil
-pfDB["meta-wotlk"] = nil
 
 -- track all previous meta selections on login
 pfDatabase.tracking = CreateFrame("Frame", "pfDatabaseMetaTracking", UIParent)
@@ -304,7 +166,7 @@ pfDatabase.TrackQuestItemDependency = function(self, item, qid)
   end
 end
 
-pfDatabase.itemlist:RegisterEvent("BAG_UPDATE")
+pfDatabase.itemlist:RegisterEvent("BAG_UPDATE_DELAYED")
 pfDatabase.itemlist:SetScript("OnEvent", function()
   -- only set the deadline on the first event in a burst
   if not this.pending then
@@ -342,25 +204,18 @@ pfDatabase.itemlist:SetScript("OnUpdate", function()
   -- fill new item db with bag items
   for bag = 4, 0, -1 do
     for slot = 1, GetContainerNumSlots(bag) do
-      local link = GetContainerItemLink(bag, slot)
-      local _, _, parse = strfind((link or ""), "(%d+):")
-      if parse then
-        local item = GetItemInfo(parse)
-        if item then
-          this.db[item] = true
-        end
+      local itemName = C_Item.GetItemName(ItemLocation:CreateFromBagAndSlot(bag, slot))
+      if itemName then
+        this.db[itemName] = true
       end
     end
   end
 
   -- fill new item db with equipped items
-  for i = 1, 19 do
-    if GetInventoryItemLink("player", i) then
-      local _, _, link = string.find(GetInventoryItemLink("player", i), "(item:%d+:%d+:%d+:%d+)")
-      local item = GetItemInfo(link)
-      if item then
-        this.db[item] = true
-      end
+  for i=INVSLOT_FIRST_EQUIPPED,INVSLOT_LAST_EQUIPPED do
+    local itemName = C_Item.GetItemName(ItemLocation:CreateFromEquipmentSlot(i))
+    if itemName then
+      this.db[itemName] = true
     end
   end
 
@@ -383,68 +238,6 @@ pfDatabase.itemlist:SetScript("OnUpdate", function()
   this:Hide()
 end)
 
--- check for unlocalized servers and fallback to enUS databases when the server
--- returns item names that are different to the database ones. (check via. Hearthstone)
-CreateFrame("Frame", "pfQuestLocaleCheck", UIParent):SetScript("OnUpdate", function()
-  -- throttle to to one item per second
-  if (this.tick or 0) > GetTime() then
-    return
-  else
-    this.tick = GetTime() + 0.1
-  end
-
-  if not this.dryrun then
-    -- give the server one iteration to return the itemname.
-    -- this is required for clients that use a clean wdb folder.
-    ItemRefTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
-    ItemRefTooltip:SetHyperlink("item:6948:0:0:0")
-    ItemRefTooltip:Hide()
-    this.dryrun = true
-    return
-  end
-
-  -- try to load hearthstone into tooltip
-  ItemRefTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
-  ItemRefTooltip:SetHyperlink("item:6948:0:0:0")
-
-  -- check tooltip for results
-  if ItemRefTooltip:IsShown() and ItemRefTooltipTextLeft1 and ItemRefTooltipTextLeft1:IsVisible() then
-    -- once the tooltip shows up, read the name and hide it
-    local name = ItemRefTooltipTextLeft1:GetText()
-    ItemRefTooltip:Hide()
-
-    -- check for noloc
-    if name and name ~= "" and pfDB["items"][loc] and pfDB["items"][loc][6948] then
-      if not strfind(name, pfDB["items"][loc][6948], 1) then
-        pfDatabase.dbstring = ""
-        for id, db in pairs(dbs) do
-          -- assign existing locale and update dbstring
-          pfDB[db]["loc"] = noloc[db] and pfDB[db]["enUS"] or pfDB[db][loc] or {}
-          pfDatabase.dbstring = pfDatabase.dbstring
-            .. " |cffcccccc[|cffffffff"
-            .. db
-            .. "|cffcccccc:|cff33ffcc"
-            .. (noloc[db] and "enUS" or loc)
-            .. "|cffcccccc]"
-        end
-      end
-
-      pfDatabase.localized = true
-      pfDatabase:BuildNameIndex()
-      pfDatabase:BuildStaticRejectSet()
-      this:Hide()
-    end
-  end
-
-  -- set a detection timeout to 15 seconds
-  if GetTime() > 15 then
-    pfDatabase.localized = true
-    pfDatabase:BuildNameIndex()
-    pfDatabase:BuildStaticRejectSet()
-    this:Hide()
-  end
-end)
-
 -- sanity check the databases
 if isempty(pfDB["quests"]["loc"]) then
   CreateFrame("Frame"):SetScript("OnUpdate", function()
@@ -464,7 +257,7 @@ if isempty(pfDB["quests"]["loc"]) then
 end
 
 -- add database shortcuts
-local items, units, objects, quests, zones, refloot, itemreq, areatrigger, professions
+local items, units, objects, quests, zones, refloot, itemreq, professions
 pfDatabase.Reload = function()
   items = pfDB["items"]["data"]
   units = pfDB["units"]["data"]
@@ -473,7 +266,6 @@ pfDatabase.Reload = function()
   zones = pfDB["zones"]["data"]
   refloot = pfDB["refloot"]["data"]
   itemreq = pfDB["quests-itemreq"]["data"]
-  areatrigger = pfDB["areatrigger"]["data"]
   professions = pfDB["professions"]["loc"]
 end
 
@@ -593,12 +385,6 @@ local bitraces = {
   [128] = "Troll",
 }
 
--- append with playable races by expansion
-if pfQuestCompat.client > 11200 then
-  bitraces[512] = "BloodElf"
-  bitraces[1024] = "Draenei"
-end
-
 -- make it public for extensions
 pfDB.bitraces = bitraces
 
@@ -708,11 +494,13 @@ function pfDatabase:ShowExtendedTooltip(id, tooltip, parent, anchor, offx, offy)
 
   tooltip:SetOwner(parent, anchor, offx, offy)
 
-  local locales = pfDB["quests"]["loc"][id]
   local data = pfDB["quests"]["data"][id]
+  local title = pfDatabase:GetQuestText(id, "T")
+  local objectives = pfDatabase:GetQuestText(id, "O")
+  local description = pfDatabase:GetQuestText(id, "D")
 
-  if locales then
-    tooltip:SetText((locales["T"] or UNKNOWN), 0.3, 1, 0.8)
+  if title then
+    tooltip:SetText(title, .3, 1, .8)
     tooltip:AddLine(" ")
   else
     tooltip:SetText(UNKNOWN, 0.3, 1, 0.8)
@@ -760,18 +548,16 @@ function pfDatabase:ShowExtendedTooltip(id, tooltip, parent, anchor, offx, offy)
     end
   end
 
-  if locales then
-    -- obectives
-    if locales["O"] and locales["O"] ~= "" then
-      tooltip:AddLine(" ")
-      tooltip:AddLine(pfDatabase:FormatQuestText(locales["O"]), 1, 1, 1, true)
-    end
+  -- objectives
+  if objectives and objectives ~= "" then
+    tooltip:AddLine(" ")
+    tooltip:AddLine(pfDatabase:FormatQuestText(objectives),1,1,1,true)
+  end
 
-    -- details
-    if locales["D"] and locales["D"] ~= "" then
-      tooltip:AddLine(" ")
-      tooltip:AddLine(pfDatabase:FormatQuestText(locales["D"]), 0.6, 0.6, 0.6, true)
-    end
+  -- details
+  if description and description ~= "" then
+    tooltip:AddLine(" ")
+    tooltip:AddLine(pfDatabase:FormatQuestText(description),.6,.6,.6,true)
   end
 
   -- add levels
@@ -930,6 +716,22 @@ function pfDatabase:GetIDByName(name, db, partial, server)
   return ret
 end
 
+-- GetQuestText
+-- Returns localized quest text. Prefers the engine's quest-data cache (the
+-- source of truth once the player has loaded the quest) and falls back to
+-- the shipped locale table for cache-cold quests (browser search, map
+-- pickup pins for quests never accepted, historical journal entries, etc.).
+-- field is "T" (title), "O" (objectives), or "D" (description).
+function pfDatabase:GetQuestText(id, field)
+  local d = C_QuestLog.GetQuestDetails(id)
+  if d then
+    if field == "T" then return d.title end
+    if field == "O" then return d.objectives end
+    if field == "D" then return d.description end
+  end
+  return pfDB.quests.loc[id] and pfDB.quests.loc[id][field]
+end
+
 -- GetIDByIDPart
 -- Scans localization tables for matching IDs
 -- Returns table with all IDs
@@ -969,39 +771,41 @@ function pfDatabase:GetBestMap(maps)
 end
 
 -- SearchAreaTriggerID
--- Scans for all mobs with a specified ID
--- Adds map nodes for each and returns its map table
+-- Reads the trigger's geometry live from the client's AreaTrigger.dbc via
+-- ClassicAPI (C_Map.GetAreaTriggerInfo) instead of a shipped coordinate table.
+-- Adds a map node for the resolved zone and returns its map table.
 function pfDatabase:SearchAreaTriggerID(id, meta, maps, prio)
-  if not areatrigger[id] or not areatrigger[id]["coords"] then
+  if not (C_Map and C_Map.GetAreaTriggerInfo) then
+    return maps
+  end
+
+  local trigger = C_Map.GetAreaTriggerInfo(id)
+  -- areaID/mapX/mapY are absent when the point can't be resolved to a zone rect
+  if not trigger or not trigger.areaID or not trigger.mapX or not trigger.mapY then
     return maps
   end
 
   local maps = maps or {}
   local prio = prio or 1
+  local zone = trigger.areaID
 
-  for _, data in pairs(areatrigger[id]["coords"]) do
-    local x, y, zone = unpack(data)
+  -- add all gathered data
+  meta = meta or {}
+  meta["spawn"] = pfQuest_Loc["Exploration Mark"]
+  meta["spawnid"] = id
+  meta["item"] = nil
 
-    if zone and zone > 0 then
-      -- add all gathered data
-      meta = meta or {}
-      meta["spawn"] = pfQuest_Loc["Exploration Mark"]
-      meta["spawnid"] = id
-      meta["item"] = nil
+  meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
+  meta["zone"] = zone
+  meta["x"] = trigger.mapX
+  meta["y"] = trigger.mapY
 
-      meta["title"] = meta["quest"] or meta["item"] or meta["spawn"]
-      meta["zone"] = zone
-      meta["x"] = x
-      meta["y"] = y
+  meta["level"] = pfQuest_Loc["N/A"]
+  meta["spawntype"] = pfQuest_Loc["Trigger"]
+  meta["respawn"] = pfQuest_Loc["N/A"]
 
-      meta["level"] = pfQuest_Loc["N/A"]
-      meta["spawntype"] = pfQuest_Loc["Trigger"]
-      meta["respawn"] = pfQuest_Loc["N/A"]
-
-      maps[zone] = maps[zone] and maps[zone] + prio or prio
-      pfMap:AddNode(meta)
-    end
-  end
+  maps[zone] = maps[zone] and maps[zone] + prio or prio
+  pfMap:AddNode(meta)
 
   return maps
 end
@@ -1454,7 +1258,7 @@ function pfDatabase:SearchQuestID(id, meta, maps)
   local meta = meta or {}
 
   meta["questid"] = id
-  meta["quest"] = pfDB.quests.loc[id] and pfDB.quests.loc[id].T
+  meta["quest"] = pfDatabase:GetQuestText(id, "T")
   meta["qlvl"] = quests[id]["lvl"]
   meta["qmin"] = quests[id]["min"]
 
@@ -1535,24 +1339,32 @@ function pfDatabase:SearchQuestID(id, meta, maps)
     if objectives then
       for i = 1, objectives, 1 do
         local text, type, done = GetQuestLogLeaderBoard(i, meta["qlogid"])
+        local objid = GetQuestLogLeaderBoardID(i, meta["qlogid"])
 
-        -- spawn data
         if type == "monster" then
-          local i, j, monsterName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
-          for id in pairs(pfDatabase:GetIDByName(monsterName, "units")) do
-            parse_obj["U"][id] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
-          end
+          local _, _, _, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
+          -- text doesn't always match the kill template (e.g. "use X on Y"
+          -- objectives also come back as type "monster"); skip when it doesn't
+          -- to match the original behaviour where GetIDByName(nil) was a no-op
+          if objNum and objNeeded then
+            local state = ( objNum + 0 >= objNeeded + 0 or done ) and "DONE" or "PROG"
 
-          for id in pairs(pfDatabase:GetIDByName(monsterName, "objects")) do
-            parse_obj["O"][id] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
+            -- "monster" kind covers both creatures and gameobjects in 1.12
+            if units[objid] then
+              parse_obj["U"][objid] = state
+            elseif objects[objid] then
+              parse_obj["O"][objid] = state
+            end
           end
         end
 
-        -- item data
         if type == "item" then
-          local i, j, itemName, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
-          for id in pairs(pfDatabase:GetIDByName(itemName, "items")) do
-            parse_obj["I"][id] = (objNum + 0 >= objNeeded + 0 or done) and "DONE" or "PROG"
+          local _, _, _, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
+          if objNum and objNeeded then
+            local state = ( objNum + 0 >= objNeeded + 0 or done ) and "DONE" or "PROG"
+            if items[objid] then
+              parse_obj["I"][objid] = state
+            end
           end
         end
       end
@@ -2000,128 +1812,12 @@ function pfDatabase:FormatQuestText(questText)
 end
 
 -- GetQuestIDs
--- Try to guess the quest ID based on the questlog ID
--- Returns possible quest IDs
+-- Returns a single-element array containing the engine-authoritative quest
+-- ID for the given quest log slot, or nil for headers / empty slots. Callers
+-- expect the array shape, so the wrapper stays.
 function pfDatabase:GetQuestIDs(qid)
-  if GetQuestLink then
-    local questLink = GetQuestLink(qid)
-    if questLink then
-      local _, _, id = strfind(questLink, "|c.*|Hquest:([%d]+):([-]?[%d]+)|h%[(.*)%]|h|r")
-      if id then
-        return { [1] = tonumber(id) }
-      end
-    end
-  end
-
-  local oldID = GetQuestLogSelection()
-  SelectQuestLogEntry(qid)
-  local text, objective = GetQuestLogQuestText()
-  local title, level, _, header = compat.GetQuestLogTitle(qid)
-  SelectQuestLogEntry(oldID)
-
-  if header or not title then
-    return
-  end
-  local identifier = title .. ":" .. (level or "") .. ":" .. (objective or "") .. ":" .. (text or "")
-
-  -- always make sure the quest-cache exists
-  pfQuest_questcache = pfQuest_questcache or {}
-
-  if pfQuest_questcache[identifier] and pfQuest_questcache[identifier][1] then
-    return pfQuest_questcache[identifier]
-  end
-
-  local _, race = UnitRace("player")
-  local prace = pfDatabase:GetBitByRace(race)
-  local _, class = UnitClass("player")
-  local pclass = pfDatabase:GetBitByClass(class)
-
-  local best = 0
-  local results = {}
-
-  local tcount = 0
-  -- check if multiple quests share the same name
-  for id, data in pairs(pfDB["quests"]["loc"]) do
-    if quests[id] and data.T == title then
-      tcount = tcount + 1
-    end
-  end
-
-  -- no title was found, run levenshtein on titles
-  if tcount == 0 and title then
-    local tlen = string.len(title)
-    local tscore, tbest, ttitle = nil, math.min(tlen / 2, 5), nil
-    for id, data in pairs(pfDB["quests"]["loc"]) do
-      if quests[id] and data.T then
-        tscore = lev(data.T, title, tbest)
-        if tscore < tbest then
-          tbest = tscore
-          ttitle = data.T
-        end
-      end
-    end
-
-    if not ttitle then
-      -- return early on unknown quests.
-      if not pfDatabase.localized then
-        -- skip cache if locale-checks are still running
-        return { title }
-      else
-        -- flag quest as unknown and return
-        pfQuest_questcache[identifier] = { title }
-        return pfQuest_questcache[identifier]
-      end
-    else
-      -- set title to best result
-      title = ttitle
-    end
-  end
-
-  for id, data in pairs(pfDB["quests"]["loc"]) do
-    local score = 0
-
-    if quests[id] and data.T and data.T == title then
-      -- low score for same name
-      score = 1
-
-      -- check level and set score
-      if quests[id]["lvl"] == level then
-        score = score + 8
-      end
-
-      -- check race and set score
-      if quests[id]["race"] and (bit.band(quests[id]["race"], prace) == prace) then
-        score = score + 8
-      end
-
-      -- check class and set score
-      if quests[id]["class"] and (bit.band(quests[id]["class"], pclass) == pclass) then
-        score = score + 8
-      end
-
-      -- if multiple quests share the same name, use levenshtein algorithm,
-      -- to compare quest text distances in order to estimate the best quest id
-      if tcount > 1 then
-        -- check objective and calculate score
-        score = score + max(24 - lev(pfDatabase:FormatQuestText(pfDB.quests.loc[id]["O"]), objective, 24), 0)
-
-        -- check description and calculate score
-        score = score + max(24 - lev(pfDatabase:FormatQuestText(pfDB.quests.loc[id]["D"]), text, 24), 0)
-      end
-
-      if score > best then
-        best = score
-      end
-      results[score] = results[score] or {}
-      if score > 0 then
-        table.insert(results[score], id)
-      end
-    end
-  end
-
-  -- cache for next time
-  pfQuest_questcache[identifier] = results[best]
-  return results[best]
+  local id = C_QuestLog.GetQuestIDForLogIndex(qid)
+  if id and id > 0 then return { id } end
 end
 
 -- browser search related defaults and values
@@ -2345,4 +2041,43 @@ function pfDatabase:QueryServer()
 
   queryFrame:RegisterEvent("QUEST_QUERY_COMPLETE")
   QueryQuestsCompleted()
+end
+
+-- check for unlocalized servers and fall back to enUS databases when the server
+-- returns item names that differ from the database ones (checked via Hearthstone).
+-- Placed at the end of the file so the synchronous cached-item path can safely
+-- call BuildNameIndex/BuildStaticRejectSet (and GetBitByRace/GetBitByClass) after
+-- every function they depend on is defined. BuildStaticRejectSet self-guards for
+-- UnitRace/UnitClass being nil pre-login; PLAYER_ENTERING_WORLD rebuilds it fully.
+do
+  local function RunNameCheck(name)
+    if name and name ~= "" and pfDB["items"][loc] and pfDB["items"][loc][HEARTHSTONE_ITEM_ID] then
+      if not strfind(name, pfDB["items"][loc][HEARTHSTONE_ITEM_ID], 1) then
+        pfDatabase.dbstring = ""
+        for id, db in pairs(dbs) do
+          -- assign existing locale and update dbstring
+          pfDB[db]["loc"] = noloc[db] and pfDB[db]["enUS"] or pfDB[db][loc] or {}
+          pfDatabase.dbstring = pfDatabase.dbstring
+            .. " |cffcccccc[|cffffffff"
+            .. db
+            .. "|cffcccccc:|cff33ffcc"
+            .. (noloc[db] and "enUS" or loc)
+            .. "|cffcccccc]"
+        end
+      end
+      pfDatabase.localized = true
+      -- locale tables may have been swapped above; rebuild the derived indexes
+      -- (this replaces the call site the old locale-detection OnUpdate had)
+      pfDatabase:BuildNameIndex()
+      pfDatabase:BuildStaticRejectSet()
+    end
+  end
+  if C_Item.IsItemDataCachedByID(HEARTHSTONE_ITEM_ID) then
+    RunNameCheck(C_Item.GetItemNameByID(HEARTHSTONE_ITEM_ID))
+  else
+    local item = Item:CreateFromItemID(HEARTHSTONE_ITEM_ID)
+    item:ContinueOnItemLoad(function()
+      RunNameCheck(item:GetItemName())
+    end)
+  end
 end

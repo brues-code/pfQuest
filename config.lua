@@ -31,21 +31,11 @@ local reset = {
 
     StaticPopup_Show("PFQUEST_RESET")
   end,
-  cache = function()
-    local dialog = StaticPopupDialogs["PFQUEST_RESET"]
-    dialog.text = L["Do you really want to reset the caches?"]
-    dialog.OnAccept = function()
-      pfQuest_questcache = nil
-      ReloadUI()
-    end
-
-    StaticPopup_Show("PFQUEST_RESET")
-  end,
   everything = function()
     local dialog = StaticPopupDialogs["PFQUEST_RESET"]
     dialog.text = L["Do you really want to reset everything?"]
     dialog.OnAccept = function()
-      pfQuest_config, pfBrowser_fav, pfQuest_history, pfQuest_colors, pfQuest_server, pfQuest_questcache = nil
+      pfQuest_config, pfBrowser_fav, pfQuest_history, pfQuest_colors, pfQuest_server = nil
       ReloadUI()
     end
 
@@ -125,7 +115,6 @@ pfQuest_defconfig = {
   { text = L["User Data"], default = nil, type = "header" },
   { text = L["Reset Configuration"], default = "1", type = "button", func = reset.config },
   { text = L["Reset Quest History"], default = "1", type = "button", func = reset.history },
-  { text = L["Reset Cache"], default = "1", type = "button", func = reset.cache },
   { text = L["Reset Everything"], default = "1", type = "button", func = reset.everything },
 }
 
@@ -165,7 +154,7 @@ pfUI.api.CreateBackdrop(pfQuestConfig, nil, true, 0.75)
 table.insert(UISpecialFrames, "pfQuestConfig")
 
 -- detect current addon path
-local tocs = { "", "-master", "-tbc", "-wotlk", "-turtle" }
+local tocs = { "", "-master", "-turtle" }
 for _, name in pairs(tocs) do
   local current = string.format("pfQuest%s", name)
   local _, title = GetAddOnInfo(current)
@@ -485,12 +474,11 @@ end
 -- This ensures LoadConfig, MigrateHistory, CreateConfigEntries exist when called
 pfQuestConfig:RegisterEvent("ADDON_LOADED")
 pfQuestConfig:SetScript("OnEvent", function()
-  if arg1 == "pfQuest" or arg1 == "pfQuest-tbc" or arg1 == "pfQuest-wotlk" then
+  if arg1 == "pfQuest" then
     pfQuestConfig:LoadConfig()
     pfQuestConfig:MigrateHistory()
     pfQuestConfig:CreateConfigEntries(pfQuest_defconfig)
 
-    pfQuest_questcache = pfQuest_questcache or {}
     pfQuest_history = pfQuest_history or {}
     pfQuest_colors = pfQuest_colors or {}
     pfQuest_config = pfQuest_config or {}
