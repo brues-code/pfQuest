@@ -395,34 +395,24 @@ local VERTEX_BLUE = { 0.2, 0.8, 1 }
 -- factionMap for GetRaceMaskByID (avoid recreation per call)
 local factionMap = { ["A"] = 77, ["H"] = 178, ["AH"] = 255, ["HA"] = 255 }
 
-local bitraces = {
-  [1] = "Human",
-  [2] = "Orc",
-  [4] = "Dwarf",
-  [8] = "NightElf",
-  [16] = "Scourge",
-  [32] = "Tauren",
-  [64] = "Gnome",
-  [128] = "Troll",
-}
+-- Race/class bitmasks: bit = 2^(dbcID-1) -> token
+local bitraces = {}
+local bitclasses = {}
 
--- make it public for extensions
+for id = 1, 32 do
+  local bit = 2 ^ (id - 1)
+  local r = C_CreatureInfo.GetRaceInfo(id)
+  if r and r.clientFileString and r.clientFileString ~= "" then
+    bitraces[bit] = r.clientFileString
+  end
+  local c = C_CreatureInfo.GetClassInfo(id)
+  if c and c.classFile and c.classFile ~= "" then
+    bitclasses[bit] = c.classFile
+  end
+end
+
+-- make them public for extensions
 pfDB.bitraces = bitraces
-
-local bitclasses = {
-  [1] = "WARRIOR",
-  [2] = "PALADIN",
-  [4] = "HUNTER",
-  [8] = "ROGUE",
-  [16] = "PRIEST",
-  [32] = "DEATHKNIGHT",
-  [64] = "SHAMAN",
-  [128] = "MAGE",
-  [256] = "WARLOCK",
-  [1024] = "DRUID",
-}
-
--- make it public for extensions
 pfDB.bitclasses = bitclasses
 
 function pfDatabase:IsFriendly(id)
@@ -893,6 +883,7 @@ local FLIGHT_NEUTRAL, FLIGHT_HORDE, FLIGHT_ALLIANCE = 0, 1, 2
 -- "Moonglade" nodes (49/69) are public, so they're not listed. Keyed by nodeID
 -- so it's independent of zone resolution.
 local druid_only_nodes = { [62] = true, [63] = true }
+local isdruid = PlayerUtil.GetClassFile() == "DRUID"
 
 -- SearchFlightNodes
 -- Draws flight masters read live from the client's TaxiNodes.dbc via ClassicAPI
@@ -912,9 +903,6 @@ function pfDatabase:SearchFlightNodes(query, meta)
 
   meta.tracking = true
   meta.fade_range = meta.icon and 10 or nil
-
-  local _, class = UnitClass("player")
-  local isdruid = class == "DRUID"
 
   for _, node in ipairs(C_TaxiMap.GetTaxiNodesForMap()) do
     local f = node.faction
