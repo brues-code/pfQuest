@@ -257,13 +257,12 @@ if isempty(pfDB["quests"]["loc"]) then
 end
 
 -- add database shortcuts
-local items, units, objects, quests, zones, refloot, itemreq, professions
+local items, units, objects, quests, refloot, itemreq, professions
 pfDatabase.Reload = function()
   items = pfDB["items"]["data"]
   units = pfDB["units"]["data"]
   objects = pfDB["objects"]["data"]
   quests = pfDB["quests"]["data"]
-  zones = pfDB["zones"]["data"]
   refloot = pfDB["refloot"]["data"]
   itemreq = pfDB["quests-itemreq"]["data"]
   professions = pfDB["professions"]["loc"]
@@ -1000,18 +999,58 @@ function pfDatabase:SearchMob(mob, meta, partial)
   return maps
 end
 
+-- Subzone placement is read live from the client's WorldMapOverlay.dbc via
+-- ClassicAPI (C_Map.GetMapOverlays), replacing the shipped pfDB["zones"]["data"]
+-- table. Each overlay reveals a subzone (areaID) and carries its hit rectangle
+-- in world-map canvas pixels (1002x668); the parent zone is the one we queried.
+-- Built once, lazily, and cached as: subzone id -> { parentZone, w%, h%, cx%, cy% }
+-- (the same shape SearchZoneID consumed before). Any explicit entries in
+-- pfDB["zones"]["data"] (e.g. patched in by pfQuest-turtle) are folded in and
+-- take precedence over the live read.
+local zone_index
+local function GetZoneIndex()
+  if zone_index then return zone_index end
+  zone_index = {}
+
+  if C_Map and C_Map.GetMapOverlays then
+    for parent in pairs(pfDB["zones"]["loc"]) do
+      local overlays = C_Map.GetMapOverlays(parent)
+      if overlays then
+        for _, ov in ipairs(overlays) do
+          local sub = ov.areaID
+          if sub and sub > 0 then
+            local cx = (ov.hitRectLeft + ov.hitRectRight) / 2 / 1002 * 100
+            local cy = (ov.hitRectTop + ov.hitRectBottom) / 2 / 668 * 100
+            local w = (ov.hitRectRight - ov.hitRectLeft) / 1002 * 100
+            local h = (ov.hitRectBottom - ov.hitRectTop) / 668 * 100
+            zone_index[sub] = { parent, w, h, cx, cy }
+          end
+        end
+      end
+    end
+  end
+
+  -- fold in explicitly shipped/patched entries (pfQuest-turtle etc.); they win
+  for id, data in pairs(pfDB["zones"]["data"]) do
+    zone_index[id] = data
+  end
+
+  return zone_index
+end
+
 -- SearchZoneID
--- Scans for all zones with a specific ID
--- Add nodes to the center of that location
+-- Adds a node at the center of the given (sub)zone and returns its map table
 function pfDatabase:SearchZoneID(id, meta, maps, prio)
-  if not zones[id] then
+  local index = GetZoneIndex()
+  if not index[id] then
     return maps
   end
 
   local maps = maps or {}
   local prio = prio or 1
 
-  local zone, width, height, x, y, ex, ey = unpack(zones[id])
+  local entry = index[id]
+  local zone, x, y = entry[1], entry[4], entry[5]
 
   if zone > 0 then
     maps[zone] = maps[zone] and maps[zone] + prio or prio
@@ -1040,9 +1079,10 @@ end
 -- Adds map nodes for each and returns its map table
 function pfDatabase:SearchZone(obj, meta, partial)
   local maps = {}
+  local index = GetZoneIndex()
 
   for id in pairs(pfDatabase:GetIDByName(obj, "zones", partial)) do
-    if zones[id] then
+    if index[id] then
       maps = pfDatabase:SearchZoneID(id, meta, maps)
     end
   end
