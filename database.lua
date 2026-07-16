@@ -113,6 +113,14 @@ for id, db in pairs(dbs) do
     .. "|cffcccccc]"
 end
 
+-- Zone names are read live from the client's AreaTable.dbc via ClassicAPI
+-- (C_Map.GetAreas), replacing the shipped db/<locale>/zones.lua name tables.
+-- Everything downstream reads pfDB.zones.loc, so we just repoint its source
+-- (names are in the client's active locale, same as the game shows them).
+if C_Map and C_Map.GetAreas then
+  pfDB["zones"]["loc"] = C_Map.GetAreas()
+end
+
 -- Free unused locale data to reduce memory (~65MB savings)
 -- The "loc" reference already points to the correct table, so we can safely
 -- nil out all other locale tables and let them be garbage collected
