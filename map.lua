@@ -61,7 +61,22 @@ local mainmap_inversescale = 1.0
 
 local validmaps = setmetatable({}, { __mode = "kv" })
 local rgbcache = setmetatable({}, { __mode = "kv" })
-local minimap_sizes = pfDB["minimap"]
+-- Zone world sizes { width, height } in yards. Read live from the client's
+-- WorldMapArea.dbc via ClassicAPI (C_Map.GetMapWorldSize), keyed by AreaTable
+-- id and cached per zone, replacing the shipped size table. Explicit entries
+-- (e.g. patched in by pfQuest-turtle) still win; unknown zones fall through to
+-- the API and cache `false` so they're only queried once.
+local minimap_sizes = setmetatable(pfDB["minimap"], {
+  __index = function(t, mapID)
+    local w, h
+    if C_Map and C_Map.GetMapWorldSize then
+      w, h = C_Map.GetMapWorldSize(mapID)
+    end
+    local size = (w and h) and { w, h } or false
+    rawset(t, mapID, size)
+    return size
+  end,
+})
 local minimap_zoom = {
   [0] = {
     [0] = 300,
