@@ -258,6 +258,10 @@ end
 
 -- add database shortcuts
 local items, units, objects, quests, refloot, itemreq
+-- zone name/id maps sourced once from the client's AreaTable.dbc (ClassicAPI);
+-- zonenames = { [id] = name }, zoneids = { [name] = id } (reverse, for O(1)
+-- GetMapIDByName). Cached so C_Map.GetAreas() runs only once.
+local zonenames, zoneids
 pfDatabase.Reload = function()
   items = pfDB["items"]["data"]
   units = pfDB["units"]["data"]
@@ -268,17 +272,21 @@ pfDatabase.Reload = function()
 
   -- Zone names come live from the client's AreaTable.dbc via ClassicAPI
   -- (C_Map.GetAreas), replacing the shipped db/<locale>/zones.lua tables.
-  -- Done inside Reload (not once at load) so it re-asserts after pfQuest-turtle,
-  -- which reassigns pfDB.zones.loc under TURTLE_DE_PATCH and then calls Reload().
-  -- Refilled in place so cached pfDB.zones.loc handles (e.g. browser) stay valid.
-  if C_Map and C_Map.GetAreas then
-    local zoneloc = pfDB["zones"]["loc"]
-    if type(zoneloc) ~= "table" then
-      zoneloc = {}
-      pfDB["zones"]["loc"] = zoneloc
+  -- Built once (cached in the zonenames/zoneids upvalues) with a reverse
+  -- name->id map for O(1) GetMapIDByName. Re-pointed here each Reload so it
+  -- survives pfQuest-turtle reassigning pfDB.zones.loc (TURTLE_DE_PATCH) before
+  -- it calls Reload(). loc/revloc always point at the same cached tables, so
+  -- handles captured elsewhere (e.g. browser) stay valid.
+  if C_Map and C_Map.GetAreas and not zonenames then
+    zonenames = C_Map.GetAreas()
+    zoneids = {}
+    for id, name in pairs(zonenames) do
+      if not zoneids[name] then zoneids[name] = id end
     end
-    for k in pairs(zoneloc) do zoneloc[k] = nil end
-    for id, name in pairs(C_Map.GetAreas()) do zoneloc[id] = name end
+  end
+  if zonenames then
+    pfDB["zones"]["loc"] = zonenames
+    pfDB["zones"]["revloc"] = zoneids
   end
 end
 

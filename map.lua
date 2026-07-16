@@ -559,6 +559,12 @@ function pfMap:GetMapNameByID(id)
 end
 
 function pfMap:GetMapIDByName(search)
+  -- O(1) via the reverse name->id index (built from AreaTable.dbc in Reload)
+  local revloc = pfDB["zones"]["revloc"]
+  if revloc then
+    return revloc[search]
+  end
+  -- fallback: linear scan if the reverse index isn't available
   for id, name in pairs(pfDB["zones"]["loc"]) do
     if name == search then
       return id
