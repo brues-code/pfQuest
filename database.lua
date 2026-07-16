@@ -113,14 +113,6 @@ for id, db in pairs(dbs) do
     .. "|cffcccccc]"
 end
 
--- Zone names are read live from the client's AreaTable.dbc via ClassicAPI
--- (C_Map.GetAreas), replacing the shipped db/<locale>/zones.lua name tables.
--- Everything downstream reads pfDB.zones.loc, so we just repoint its source
--- (names are in the client's active locale, same as the game shows them).
-if C_Map and C_Map.GetAreas then
-  pfDB["zones"]["loc"] = C_Map.GetAreas()
-end
-
 -- Free unused locale data to reduce memory (~65MB savings)
 -- The "loc" reference already points to the correct table, so we can safely
 -- nil out all other locale tables and let them be garbage collected
@@ -273,6 +265,21 @@ pfDatabase.Reload = function()
   quests = pfDB["quests"]["data"]
   refloot = pfDB["refloot"]["data"]
   itemreq = pfDB["quests-itemreq"]["data"]
+
+  -- Zone names come live from the client's AreaTable.dbc via ClassicAPI
+  -- (C_Map.GetAreas), replacing the shipped db/<locale>/zones.lua tables.
+  -- Done inside Reload (not once at load) so it re-asserts after pfQuest-turtle,
+  -- which reassigns pfDB.zones.loc under TURTLE_DE_PATCH and then calls Reload().
+  -- Refilled in place so cached pfDB.zones.loc handles (e.g. browser) stay valid.
+  if C_Map and C_Map.GetAreas then
+    local zoneloc = pfDB["zones"]["loc"]
+    if type(zoneloc) ~= "table" then
+      zoneloc = {}
+      pfDB["zones"]["loc"] = zoneloc
+    end
+    for k in pairs(zoneloc) do zoneloc[k] = nil end
+    for id, name in pairs(C_Map.GetAreas()) do zoneloc[id] = name end
+  end
 end
 
 pfDatabase.Reload()
