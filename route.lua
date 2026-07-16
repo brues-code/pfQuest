@@ -125,8 +125,7 @@ local function DrawLine(path, x, y, nx, ny, hl, minimap)
       end
 
       path[nline] = path[nline] or (minimap and pfMap.drawlayer or WorldMapButton.routes):CreateTexture(nil, "OVERLAY")
-      path[nline]:SetWidth(4)
-      path[nline]:SetHeight(4)
+      path[nline]:SetSize(4, 4)
       path[nline]:SetTexture(pfQuestConfig.path .. "\\img\\route")
       if hl and minimap then
         path[nline]:SetVertexColor(0.6, 0.4, 0.2, 0.5)
@@ -433,8 +432,7 @@ WorldMapButton.routes:SetAllPoints()
 
 pfQuest.route.arrow = CreateFrame("Frame", "pfQuestRouteArrow", UIParent)
 pfQuest.route.arrow:SetPoint("CENTER", 0, -100)
-pfQuest.route.arrow:SetWidth(48)
-pfQuest.route.arrow:SetHeight(36)
+pfQuest.route.arrow:SetSize(48, 36)
 pfQuest.route.arrow:SetClampedToScreen(true)
 pfQuest.route.arrow:SetMovable(true)
 pfQuest.route.arrow:EnableMouse(true)
@@ -590,13 +588,11 @@ pfQuest.route.arrow.content:SetPoint("BOTTOMRIGHT", pfQuest.route.arrow, "BOTTOM
 pfQuest.route.arrow.model = pfQuest.route.arrow.content:CreateTexture("pfQuestRouteArrow", "MEDIUM")
 pfQuest.route.arrow.model:SetTexture(pfQuestConfig.path .. "\\img\\arrow")
 pfQuest.route.arrow.model:SetTexCoord(0, 0, 0.109375, 0.08203125)
-pfQuest.route.arrow.model:SetWidth(48)
-pfQuest.route.arrow.model:SetHeight(36)
+pfQuest.route.arrow.model:SetSize(48, 36)
 pfQuest.route.arrow.model:SetPoint("TOP", pfQuest.route.arrow.content, "TOP", 0, 0)
 
 pfQuest.route.arrow.texture = pfQuest.route.arrow.content:CreateTexture("pfQuestRouteNodeTexture", "OVERLAY")
-pfQuest.route.arrow.texture:SetWidth(28)
-pfQuest.route.arrow.texture:SetHeight(28)
+pfQuest.route.arrow.texture:SetSize(28, 28)
 pfQuest.route.arrow.texture:SetPoint("BOTTOM", pfQuest.route.arrow.model, "BOTTOM", 0, 0)
 
 pfQuest.route.arrow.title = pfQuest.route.arrow.content:CreateFontString("pfQuestRouteText", "HIGH", "GameFontWhite")

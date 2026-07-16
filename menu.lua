@@ -57,15 +57,13 @@ do -- minimap icon
   end)
 
   pfQuestIcon.icon = pfQuestIcon:CreateTexture(nil, "BACKGROUND")
-  pfQuestIcon.icon:SetWidth(20)
-  pfQuestIcon.icon:SetHeight(20)
+  pfQuestIcon.icon:SetSize(20, 20)
   pfQuestIcon.icon:SetTexture(pfQuestConfig.path .. "\\img\\logo")
   pfQuestIcon.icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
   pfQuestIcon.icon:SetPoint("CENTER", 1, 1)
 
   pfQuestIcon.overlay = pfQuestIcon:CreateTexture(nil, "OVERLAY")
-  pfQuestIcon.overlay:SetWidth(53)
-  pfQuestIcon.overlay:SetHeight(53)
+  pfQuestIcon.overlay:SetSize(53, 53)
   pfQuestIcon.overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
   pfQuestIcon.overlay:SetPoint("TOPLEFT", 0, 0)
 end
@@ -139,8 +137,7 @@ do -- tracking menu
 
         -- icon
         frame[name].icon = frame[name]:CreateTexture(nil, "OVERLAY")
-        frame[name].icon:SetWidth(14)
-        frame[name].icon:SetHeight(14)
+        frame[name].icon:SetSize(14, 14)
         frame[name].icon:SetPoint("RIGHT", -8, 0)
         frame[name].icon:SetTexture(pfQuestConfig.path .. "\\img\\tracking\\" .. name)
 
@@ -158,8 +155,7 @@ do -- tracking menu
           frame[name].check:SetPushedTexture("")
           frame[name].check:SetHighlightTexture("")
           frame[name].check:SetPoint("LEFT", 10, 0)
-          frame[name].check:SetWidth(20)
-          frame[name].check:SetHeight(20)
+          frame[name].check:SetSize(20, 20)
           frame[name].check:SetScale(0.6)
           frame[name].check:EnableMouse(false)
           pfUI.api.CreateBackdrop(frame[name].check, nil, true)
@@ -174,8 +170,7 @@ do -- tracking menu
     end
 
     -- update frame size
-    frame:SetWidth(width)
-    frame:SetHeight(top + 4)
+    frame:SetSize(width, top + 4)
 
     -- the usual menu hide events
     table.insert(UIMenus, name)
@@ -188,11 +183,7 @@ do -- tracking menu
   end
 
   local function ToggleFrame(frame)
-    if frame:IsShown() then
-      frame:Hide()
-    else
-      frame:Show()
-    end
+    frame:SetShown(not frame:IsShown())
   end
 
   local menu = {

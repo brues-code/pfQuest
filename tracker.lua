@@ -11,10 +11,6 @@ local fontsize = 12
 local panelheight = 16
 local entryheight = 20
 
-local function HideTooltip()
-  GameTooltip:Hide()
-end
-
 local function ShowTooltip()
   if this.tooltip then
     GameTooltip:ClearLines()
@@ -269,7 +265,7 @@ do -- button panel
     b:SetHeight(panelheight - 2)
 
     b:SetScript("OnEnter", ShowTooltip)
-    b:SetScript("OnLeave", HideTooltip)
+    b:SetScript("OnLeave", GameTooltip_Hide)
 
     if anchor == "TOPLEFT" then
       table.insert(buttons, b)
@@ -320,7 +316,7 @@ do -- button panel
   tracker.btnsort.label:SetFont(pfUI.font_default, 11)
   tracker.btnsort.label:SetTextColor(0.9, 0.9, 0.9, 1)
   tracker.btnsort:SetScript("OnEnter", ShowTooltip)
-  tracker.btnsort:SetScript("OnLeave", HideTooltip)
+  tracker.btnsort:SetScript("OnLeave", GameTooltip_Hide)
   tracker.btnsort:SetScript("OnClick", function()
     if GetQuestSortMode() == "distance" then
       pfQuest_config["trackerquestsort"] = "level"
@@ -370,7 +366,7 @@ end
 
 function tracker.ButtonLeave()
   pfMap.highlight = nil
-  HideTooltip()
+  GameTooltip_Hide()
 end
 
 function tracker.ButtonUpdate()
