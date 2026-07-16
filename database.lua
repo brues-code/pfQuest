@@ -888,6 +888,12 @@ local skill = {
 -- flight-node faction values mirror Enum.FlightPathFaction (Neutral/Horde/Alliance)
 local FLIGHT_NEUTRAL, FLIGHT_HORDE, FLIGHT_ALLIANCE = 0, 1, 2
 
+-- The "Nighthaven, Moonglade" flight points are druid-only; hide them from
+-- everyone else. TaxiNodes.dbc ids 62 (Alliance) / 63 (Horde). The separate
+-- "Moonglade" nodes (49/69) are public, so they're not listed. Keyed by nodeID
+-- so it's independent of zone resolution.
+local druid_only_nodes = { [62] = true, [63] = true }
+
 -- SearchFlightNodes
 -- Draws flight masters read live from the client's TaxiNodes.dbc via ClassicAPI
 -- (C_TaxiMap.GetTaxiNodesForMap() with no arg = every node on all continents),
@@ -907,12 +913,20 @@ function pfDatabase:SearchFlightNodes(query, meta)
   meta.tracking = true
   meta.fade_range = meta.icon and 10 or nil
 
+  local _, class = UnitClass("player")
+  local isdruid = class == "DRUID"
+
   for _, node in ipairs(C_TaxiMap.GetTaxiNodesForMap()) do
     local f = node.faction
     local show = f == FLIGHT_NEUTRAL
       or not want
       or (want == "horde" and f == FLIGHT_HORDE)
       or (want == "alliance" and f == FLIGHT_ALLIANCE)
+
+    -- Nighthaven/Moonglade flight paths are druid-only
+    if druid_only_nodes[node.nodeID] and not isdruid then
+      show = false
+    end
 
     if show and node.areaID and node.mapX and node.mapY then
       meta.spawn = node.name
