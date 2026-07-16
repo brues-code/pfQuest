@@ -177,6 +177,11 @@ pfDB["meta"] = {
     [-180248] = "AH",
     [-180184] = "AH",
   },
+  -- Flight data now comes live from the client via ClassicAPI's
+  -- C_TaxiMap.GetTaxiNodesForMap (see pfDatabase:SearchFlightNodes). This empty
+  -- stub is kept only so companion addons that read pfDB.meta.flight don't error;
+  -- pfQuest ignores it.
+  ["flight"] = {},
   ["herbs"] = {
     [-180168] = 270,
     [-180167] = 260,

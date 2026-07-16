@@ -960,8 +960,10 @@ function pfDatabase:SearchMetaRelation(query, meta, show)
   -- convert track name aliases
   local track = alias[query.name] or query.name
 
-  -- flight masters come live from the client (ClassicAPI) instead of pfDB.meta.flight
-  if track == "flight" and C_TaxiMap and C_TaxiMap.GetTaxiNodesForMap then
+  -- Flight always comes live from the client (ClassicAPI). pfDB.meta.flight is
+  -- kept only as an empty stub so companion addons (pfQuest-turtle) don't error;
+  -- pfQuest ignores it here. SearchFlightNodes returns empty without C_TaxiMap.
+  if track == "flight" then
     return pfDatabase:SearchFlightNodes(query, meta)
   end
 

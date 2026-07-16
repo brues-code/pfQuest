@@ -610,9 +610,17 @@ function pfMap:SetMapByID(id)
   end
 end
 
-local customids = {
-  ["AlteracValley"] = 2597,
-}
+-- Map texture/dir name (GetMapInfo()) -> areaID, for maps GetMapZones() does
+-- not enumerate (cities, instances). Built live from the client's
+-- WorldMapArea.dbc via ClassicAPI so every city map (Orgrimmar, Undercity, …)
+-- resolves to its zone id and shows its content; falls back to just Alterac
+-- Valley when the API is absent.
+local customids = { ["AlteracValley"] = 2597 }
+if C_Map and C_Map.GetMapAreaIDs then
+  for dir, areaID in pairs(C_Map.GetMapAreaIDs()) do
+    customids[dir] = areaID
+  end
+end
 
 local map_zone_cache = {}
 function pfMap:GetMapID(cid, mid)
