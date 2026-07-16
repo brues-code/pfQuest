@@ -885,6 +885,56 @@ local skill = {
   ["chests"] = true,
 }
 
+-- flight-node faction values mirror Enum.FlightPathFaction (Neutral/Horde/Alliance)
+local FLIGHT_NEUTRAL, FLIGHT_HORDE, FLIGHT_ALLIANCE = 0, 1, 2
+
+-- SearchFlightNodes
+-- Draws flight masters read live from the client's TaxiNodes.dbc via ClassicAPI
+-- (C_TaxiMap.GetTaxiNodesForMap() with no arg = every node on all continents),
+-- replacing the shipped pfDB.meta.flight table. Each node resolves to a zone
+-- (areaID) + map%, so it pins in the correct zone; neutral nodes show for both
+-- factions. Returns its map table.
+function pfDatabase:SearchFlightNodes(query, meta)
+  local maps = {}
+  if not (C_TaxiMap and C_TaxiMap.GetTaxiNodesForMap) then
+    return maps
+  end
+
+  meta = meta or {}
+  local want = (query and query.faction and string.lower(query.faction))
+    or (UnitFactionGroup("player") and string.lower(UnitFactionGroup("player")))
+
+  meta.tracking = true
+  meta.fade_range = meta.icon and 10 or nil
+
+  for _, node in ipairs(C_TaxiMap.GetTaxiNodesForMap()) do
+    local f = node.faction
+    local show = f == FLIGHT_NEUTRAL
+      or not want
+      or (want == "horde" and f == FLIGHT_HORDE)
+      or (want == "alliance" and f == FLIGHT_ALLIANCE)
+
+    if show and node.areaID and node.mapX and node.mapY then
+      meta.spawn = node.name
+      meta.spawnid = node.nodeID
+      meta.item = nil
+      meta.title = meta.quest or meta.item or meta.spawn
+      meta.zone = node.areaID
+      meta.x = node.mapX
+      meta.y = node.mapY
+      meta.level = "N/A"
+      meta.spawntype = pfQuest_Loc["Flight Master"]
+      meta.respawn = "N/A"
+
+      maps[node.areaID] = (maps[node.areaID] or 0) + 1
+      pfMap:AddNode(meta)
+    end
+  end
+
+  meta.tracking = false
+  return maps
+end
+
 function pfDatabase:SearchMetaRelation(query, meta, show)
   local maps = {}
 
@@ -895,6 +945,11 @@ function pfDatabase:SearchMetaRelation(query, meta, show)
 
   -- convert track name aliases
   local track = alias[query.name] or query.name
+
+  -- flight masters come live from the client (ClassicAPI) instead of pfDB.meta.flight
+  if track == "flight" and C_TaxiMap and C_TaxiMap.GetTaxiNodesForMap then
+    return pfDatabase:SearchFlightNodes(query, meta)
+  end
 
   if pfDB["meta"] and pfDB["meta"][track] then
     -- check which faction should be searched
