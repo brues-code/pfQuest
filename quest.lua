@@ -137,8 +137,7 @@ function pfQuest:Debug(msg)
 
   if not pfQuest.debugwin then
     pfQuest.debugwin = CreateFrame("ScrollingMessageFrame", nil, UIParent)
-    pfQuest.debugwin:SetWidth(320)
-    pfQuest.debugwin:SetHeight(320)
+    pfQuest.debugwin:SetSize(320, 320)
     pfQuest.debugwin:SetPoint("RIGHT", -42, 0)
     local font = pfUI and pfUI.font_default or STANDARD_TEXT_FONT
     local size = tonumber(pfQuest_config["trackerfontsize"]) or 12
@@ -606,8 +605,7 @@ function pfQuest:AddQuestLogIntegration()
   dockTitle:SetJustifyV("BOTTOM")
 
   pfQuest.buttonOnline = pfQuest.buttonOnline or CreateFrame("Button", "pfQuestOnline", dockFrame)
-  pfQuest.buttonOnline:SetWidth(18)
-  pfQuest.buttonOnline:SetHeight(15)
+  pfQuest.buttonOnline:SetSize(18, 15)
   pfQuest.buttonOnline:SetPoint("TOPRIGHT", dockFrame, "TOPRIGHT", -12, -10)
   pfQuest.buttonOnline:SetScript("OnClick", function()
     if pfUI and pfUI.chat then
@@ -629,8 +627,7 @@ function pfQuest:AddQuestLogIntegration()
   pfQuest.buttonOnline.txt:SetText("|cff000000[|cffaa2222?|cff000000]")
 
   pfQuest.buttonLanguage = pfQuest.buttonLanguage or CreateFrame("Button", "pfQuestLanguage", dockFrame)
-  pfQuest.buttonLanguage:SetWidth(75)
-  pfQuest.buttonLanguage:SetHeight(15)
+  pfQuest.buttonLanguage:SetSize(75, 15)
   pfQuest.buttonLanguage:SetPoint("RIGHT", pfQuest.buttonOnline, "LEFT", 0, 0)
 
   pfQuest.buttonLanguage.txt = pfQuest.buttonLanguage:CreateFontString("pfQuestIDButton", "HIGH", "GameFontWhite")
@@ -689,8 +686,7 @@ function pfQuest:AddQuestLogIntegration()
   end)
 
   pfQuest.buttonShow = pfQuest.buttonShow or CreateFrame("Button", "pfQuestShow", dockFrame, "UIPanelButtonTemplate")
-  pfQuest.buttonShow:SetWidth(70)
-  pfQuest.buttonShow:SetHeight(20)
+  pfQuest.buttonShow:SetSize(70, 20)
   pfQuest.buttonShow:SetText(pfQuest_Loc["Show"])
   pfQuest.buttonShow:SetPoint("TOP", dockTitle, "TOP", -110, 0)
   pfQuest.buttonShow:SetScript("OnClick", function()
@@ -708,8 +704,7 @@ function pfQuest:AddQuestLogIntegration()
   end)
 
   pfQuest.buttonHide = pfQuest.buttonHide or CreateFrame("Button", "pfQuestHide", dockFrame, "UIPanelButtonTemplate")
-  pfQuest.buttonHide:SetWidth(70)
-  pfQuest.buttonHide:SetHeight(20)
+  pfQuest.buttonHide:SetSize(70, 20)
   pfQuest.buttonHide:SetText(pfQuest_Loc["Hide"])
   pfQuest.buttonHide:SetPoint("TOP", dockTitle, "TOP", -37, 0)
   pfQuest.buttonHide:SetScript("OnClick", function()
@@ -723,8 +718,7 @@ function pfQuest:AddQuestLogIntegration()
   end)
 
   pfQuest.buttonClean = pfQuest.buttonClean or CreateFrame("Button", "pfQuestClean", dockFrame, "UIPanelButtonTemplate")
-  pfQuest.buttonClean:SetWidth(70)
-  pfQuest.buttonClean:SetHeight(20)
+  pfQuest.buttonClean:SetSize(70, 20)
   pfQuest.buttonClean:SetText(pfQuest_Loc["Clean"])
   pfQuest.buttonClean:SetPoint("TOP", dockTitle, "TOP", 37, 0)
   pfQuest.buttonClean:SetScript("OnClick", function()
@@ -732,8 +726,7 @@ function pfQuest:AddQuestLogIntegration()
   end)
 
   pfQuest.buttonReset = pfQuest.buttonReset or CreateFrame("Button", "pfQuestReset", dockFrame, "UIPanelButtonTemplate")
-  pfQuest.buttonReset:SetWidth(70)
-  pfQuest.buttonReset:SetHeight(20)
+  pfQuest.buttonReset:SetSize(70, 20)
   pfQuest.buttonReset:SetText(pfQuest_Loc["Reset"])
   pfQuest.buttonReset:SetPoint("TOP", dockTitle, "TOP", 110, 0)
   pfQuest.buttonReset:SetScript("OnClick", function()
@@ -1049,7 +1042,7 @@ else
     pfQuestHookSetItemRef(link, text, button)
 
     -- skip modifier clicks
-    if IsAltKeyDown() or IsControlKeyDown() or IsShiftKeyDown() then
+    if IsModifierKeyDown() then
       return
     end
 

@@ -11,8 +11,7 @@ do -- minimap icon
   pfQuestIcon:RegisterForDrag("LeftButton")
   pfQuestIcon:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-  pfQuestIcon:SetWidth(31)
-  pfQuestIcon:SetHeight(31)
+  pfQuestIcon:SetSize(31, 31)
   pfQuestIcon:SetFrameLevel(9)
   pfQuestIcon:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
   pfQuestIcon:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 0, 0)
@@ -28,11 +27,7 @@ do -- minimap icon
   end)
 
   pfQuestIcon:SetScript("OnClick", function()
-    if pfQuestMenu:IsShown() then
-      pfQuestMenu:Hide()
-    else
-      pfQuestMenu:Show()
-    end
+    pfQuestMenu:SetShown(not pfQuestMenu:IsShown())
   end)
 
   pfQuestIcon:SetScript("OnEnter", function()
@@ -43,17 +38,11 @@ do -- minimap icon
     GameTooltip:Show()
   end)
 
-  pfQuestIcon:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-  end)
+  pfQuestIcon:SetScript("OnLeave", GameTooltip_Hide)
 
   pfQuestIcon:RegisterEvent("PLAYER_ENTERING_WORLD")
   pfQuestIcon:SetScript("OnEvent", function()
-    if pfQuest_config["minimapbutton"] == "0" then
-      this:Hide()
-    else
-      this:Show()
-    end
+    this:SetShown(pfQuest_config["minimapbutton"] == "1")
   end)
 
   pfQuestIcon.icon = pfQuestIcon:CreateTexture(nil, "BACKGROUND")

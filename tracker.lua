@@ -137,11 +137,7 @@ tracker:SetScript("OnEvent", function()
   entryheight = ceil(fontsize * 1.6)
 
   -- restore tracker state
-  if pfQuest_config["showtracker"] and pfQuest_config["showtracker"] == "0" then
-    this:Hide()
-  else
-    this:Show()
-  end
+  this:SetShown(pfQuest_config["showtracker"] and pfQuest_config["showtracker"] == "1")
 
   UpdateSortButton()
 end)
@@ -680,8 +676,7 @@ function tracker.DoLayout()
   end
 
   width = min(width, 300) + 30
-  tracker:SetHeight(height)
-  tracker:SetWidth(width)
+  tracker:SetSize(width, height)
 end
 
 function tracker.RefreshZoneTracker()
@@ -851,8 +846,7 @@ function tracker.ButtonAdd(title, node)
 
     tracker.buttons[id].icon = tracker.buttons[id]:CreateTexture(nil, "BORDER")
     tracker.buttons[id].icon:SetPoint("TOPLEFT", 2, -4)
-    tracker.buttons[id].icon:SetWidth(12)
-    tracker.buttons[id].icon:SetHeight(12)
+    tracker.buttons[id].icon:SetSize(12, 12)
 
     tracker.buttons[id]:RegisterEvent("QUEST_WATCH_UPDATE")
     tracker.buttons[id]:RegisterEvent("QUEST_LOG_UPDATE")
