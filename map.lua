@@ -16,61 +16,26 @@ local MouseIsOver = MouseIsOver
 -- fake the pfQuest minimap node names to Gatherer names,
 -- if any minimap-breaking addon collector is found.
 local nodename = "pfMiniMapPin"
-local minimapbreakers = {
-  ["ElvUI_MinimapButtons"] = true,
-  ["MBB"] = true,
-}
+local minimapbreakers = { "ElvUI_MinimapButtons", "MBB" }
 
-local compatnamefake = CreateFrame("Frame")
-compatnamefake:RegisterEvent("PLAYER_ENTERING_WORLD")
-compatnamefake:SetScript("OnEvent", function()
-  -- only run once on login
-  this:UnregisterAllEvents()
-
-  -- scan through all addons to identify button collectors
-  for i = 1, GetNumAddOns() do
-    local name, title, notes, enabled = GetAddOnInfo(i)
-    if enabled and minimapbreakers[name] then
+TableUtil.Execute(minimapbreakers, function(addonName)
+  EventUtil.ContinueOnAddOnLoaded(addonName, function()
       nodename = "GatherNoteCompatFake"
-    end
-  end
+  end)
 end)
 
--- Ctrl-key state for the map/minimap Ctrl actions. ClassicAPI fires
--- MODIFIER_STATE_CHANGED (key, down) on transitions, so we track Ctrl there
--- instead of polling IsControlKeyDown() every frame (expensive in 1.12). The
--- consumers gate on MouseIsOver themselves, so we only track whether Ctrl is
--- down. Falls back to the legacy poll on stock clients without ClassicAPI
--- (IsModifierKeyDown is a ClassicAPI addition, used here as the capability probe).
-local controlkey = CreateFrame("Frame", "pfQuestControlKey", UIParent)
-if IsModifierKeyDown then
-  controlkey:RegisterEvent("MODIFIER_STATE_CHANGED")
-  controlkey:SetScript("OnEvent", function()
-    if arg1 == "LCTRL" then
-      controlkey.lctrl = arg2 == 1
-    elseif arg1 == "RCTRL" then
-      controlkey.rctrl = arg2 == 1
-    else
-      return
-    end
-    controlkey.pressed = (controlkey.lctrl or controlkey.rctrl) or nil
-  end)
-else
-  controlkey:SetScript("OnUpdate", function()
-    if (this.throttle or 0.05) > GetTime() then
-      return
-    else
-      this.throttle = GetTime() + 0.05
-    end
-    if WorldMapFrame:IsShown() and MouseIsOver(WorldMapFrame) then
-      controlkey.pressed = IsControlKeyDown()
-    elseif MouseIsOver(pfMap.drawlayer) then
-      controlkey.pressed = IsControlKeyDown()
-    else
-      controlkey.pressed = nil
-    end
-  end)
-end
+local controlkey = CreateFrame("Frame")
+controlkey:RegisterEvent("MODIFIER_STATE_CHANGED")
+controlkey:SetScript("OnEvent", function()
+  if arg1 == "LCTRL" then
+    controlkey.lctrl = arg2 == 1
+  elseif arg1 == "RCTRL" then
+    controlkey.rctrl = arg2 == 1
+  else
+    return
+  end
+  controlkey.pressed = (controlkey.lctrl or controlkey.rctrl) or nil
+end)
 
 local mainmap_base_effective_scale = nil
 local mainmap_inversescale = 1.0
@@ -226,15 +191,12 @@ local function NodeAnimate(self, zoom, alpha, fps)
 
   -- update size
   if math.abs(cur_zoom - zoom) < 3 then
-    self:SetWidth(zoom)
-    self:SetHeight(zoom)
+    self:SetSize(zoom, zoom)
   elseif cur_zoom < zoom then
-    self:SetWidth(cur_zoom + fpsmod)
-    self:SetHeight(cur_zoom + fpsmod)
+    self:SetSize(cur_zoom + fpsmod, cur_zoom + fpsmod)
     change = true
   elseif cur_zoom > zoom then
-    self:SetWidth(cur_zoom - fpsmod)
-    self:SetHeight(cur_zoom - fpsmod)
+    self:SetSize(cur_zoom - fpsmod, cur_zoom - fpsmod)
     change = true
   end
 
@@ -1155,16 +1117,11 @@ function pfMap:ResizeNode(frame, obj)
   end
 
   -- make the current route target visible
-  if target then
-    frame.hl:Show()
-  else
-    frame.hl:Hide()
-  end
+  frame.hl:SetShown(target == true)
 
   -- reset frame size except for highlights
   if not highlight then
-    frame:SetWidth(frame.defsize)
-    frame:SetHeight(frame.defsize)
+    frame:SetSize(frame.defsize, frame.defsize)
   end
 end
 
@@ -1203,8 +1160,7 @@ function pfMap:UpdateNodes()
   local n_pins, n_skipped = 0, 0
   -- hoist map dimensions: same for every pin this call, and if the map
   -- is resized between calls the new values will invalidate cached px/py.
-  local mapW = WorldMapButton:GetWidth()
-  local mapH = WorldMapButton:GetHeight()
+  local mapW, mapH = WorldMapButton:GetSize()
   for addon, _ in pairs(pfMap.nodes) do
     if pfMap.nodes[addon][map] then
       for coords, node in pairs(pfMap.nodes[addon][map]) do
@@ -1355,8 +1311,10 @@ function pfMap:UpdateMinimap()
   local xScale = mapZoom / mapWidth
   local yScale = mapZoom / mapHeight
 
-  local xDraw = pfMap.drawlayer:GetWidth() / xScale / 100
-  local yDraw = pfMap.drawlayer:GetHeight() / yScale / 100
+  local drawW, drawH = pfMap.drawlayer:GetSize()
+
+  local xDraw = drawW / xScale / 100
+  local yDraw = drawH / yScale / 100
 
   local i = 1
 
@@ -1381,11 +1339,11 @@ function pfMap:UpdateMinimap()
         local distance = sqrt(xPos * xPos + yPos * yPos)
 
         if pfUI.minimap then
-          display = (abs(xPos) + 8 < pfMap.drawlayer:GetWidth() / 2 and abs(yPos) + 8 < pfMap.drawlayer:GetHeight() / 2)
+          display = (abs(xPos) + 8 < drawW / 2 and abs(yPos) + 8 < drawH / 2)
               and true
             or nil
         else
-          display = (distance + 8 < pfMap.drawlayer:GetWidth() / 2) and true or nil
+          display = (distance + 8 < drawW / 2) and true or nil
         end
 
         if display then
