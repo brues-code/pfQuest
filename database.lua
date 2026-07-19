@@ -1999,16 +1999,26 @@ function pfDatabase:BrowserSearch(query, searchType)
   end
 end
 
+-- pfQuest_server["items"] is a set of custom item ids (present on the server
+-- but not in the shipped DB). Names aren't persisted -- they're resolved live
+-- from the client via ClassicAPI (C_Item.GetItemNameByID), so they follow the
+-- active locale and never go stale. Ids that aren't cached yet are requested and
+-- filled by the ITEM_DATA_LOAD_RESULT handler below.
 local function LoadCustomData(always)
   -- table.getn doesn't work here :/
   local icount = 0
-  for _, _ in pairs(pfQuest_server["items"]) do
+  for _ in pairs(pfQuest_server["items"]) do
     icount = icount + 1
   end
 
   if icount > 0 or always then
-    for id, name in pairs(pfQuest_server["items"]) do
-      pfDB["items"]["loc"][id] = name
+    for id in pairs(pfQuest_server["items"]) do
+      local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
+      if name and name ~= "" then
+        pfDB["items"]["loc"][id] = name
+      elseif C_Item and C_Item.RequestLoadItemDataByID then
+        C_Item.RequestLoadItemDataByID(id)
+      end
     end
     DEFAULT_CHAT_FRAME:AddMessage(
       "|cff33ffccpf|cffffffffQuest: |cff33ffcc" .. icount .. "|cffffffff " .. pfQuest_Loc["custom items loaded."]
@@ -2032,10 +2042,24 @@ pfServerScan.header:SetJustifyH("CENTER")
 pfServerScan.header:SetPoint("CENTER", 0, 0)
 
 pfServerScan:RegisterEvent("VARIABLES_LOADED")
+pfServerScan:RegisterEvent("ITEM_DATA_LOAD_RESULT")
 pfServerScan:SetScript("OnEvent", function()
-  pfQuest_server = pfQuest_server or {}
-  pfQuest_server["items"] = pfQuest_server["items"] or {}
-  LoadCustomData()
+  if event == "VARIABLES_LOADED" then
+    pfQuest_server = pfQuest_server or {}
+    pfQuest_server["items"] = pfQuest_server["items"] or {}
+    LoadCustomData()
+  elseif event == "ITEM_DATA_LOAD_RESULT" then
+    -- fill a custom item's name once the client finishes loading it
+    local id = arg1
+    if arg2 and id and pfQuest_server and pfQuest_server["items"]
+      and pfQuest_server["items"][id] and not pfDB["items"]["loc"][id]
+      and C_Item and C_Item.GetItemNameByID then
+      local name = C_Item.GetItemNameByID(id)
+      if name and name ~= "" then
+        pfDB["items"]["loc"][id] = name
+      end
+    end
+  end
 end)
 
 pfServerScan:SetScript("OnHide", function()
@@ -2089,9 +2113,10 @@ pfServerScan:SetScript("OnUpdate", function()
         end
       end
 
-      -- assign item to custom server table
+      -- record only the id in the custom server set; the localized name is
+      -- resolved live from the client (see LoadCustomData), not persisted
       if not pfDB["items"]["loc"][i] and not ignore[i] then
-        pfQuest_server["items"][i] = name
+        pfQuest_server["items"][i] = true
       end
     end
   end
