@@ -2032,14 +2032,55 @@ pfServerScan:SetHeight(100)
 pfServerScan:SetPoint("TOP", 0, 0)
 pfServerScan:Hide()
 
+-- The scan drives ClassicAPI's C_Item.RequestLoadItemDataByID for every id
+-- from 1..max and reads the authoritative existence answer off the
+-- ITEM_DATA_LOAD_RESULT event: success=true means the item exists on the
+-- server, success=false means it doesn't (the DLL turns the server's "no
+-- such item" reply into a false result -- see ClassicAPI item/Data.cpp).
+-- This replaces the old ItemRefTooltip probing + RETRIEVING_ITEM_INFO retry
+-- heuristic. We keep at most `window` requests in flight, comfortably under
+-- ClassicAPI's kMaxPending (512), so RequestLoadItemDataByID is never
+-- refused for lack of room.
 pfServerScan.scanID = 1
 pfServerScan.max = 100000
-pfServerScan.perloop = 100
+pfServerScan.window = 250
+pfServerScan.inflight = 0
+pfServerScan.scanPending = {}
 
 pfServerScan.header = pfServerScan:CreateFontString("Caption", "LOW", "GameFontWhite")
 pfServerScan.header:SetFont(STANDARD_TEXT_FONT, 13, "OUTLINE")
 pfServerScan.header:SetJustifyH("CENTER")
 pfServerScan.header:SetPoint("CENTER", 0, 0)
+
+-- issue load requests until the in-flight window is full or every id has
+-- been requested. ids already in the shipped DB are skipped -- a custom item
+-- is by definition not in pfDB, so probing known ids would only add traffic
+-- without discovering anything new. Cached items fire ITEM_DATA_LOAD_RESULT
+-- synchronously inside RequestLoadItemDataByID, so bookkeeping is set up
+-- before the call and the handler tolerates the re-entrant fire.
+local function ScanRefill()
+  while pfServerScan.scanID <= pfServerScan.max and pfServerScan.inflight < pfServerScan.window do
+    local id = pfServerScan.scanID
+    if pfDB["items"]["loc"][id] then
+      pfServerScan.scanID = id + 1
+    else
+      pfServerScan.scanPending[id] = true
+      pfServerScan.inflight = pfServerScan.inflight + 1
+      local accepted = C_Item.RequestLoadItemDataByID(id)
+      if not accepted then
+        -- ClassicAPI's pending set is momentarily full; undo bookkeeping
+        -- (unless a synchronous result already cleared it) and let the next
+        -- pump retry this id once outstanding results drain.
+        if pfServerScan.scanPending[id] then
+          pfServerScan.scanPending[id] = nil
+          pfServerScan.inflight = pfServerScan.inflight - 1
+        end
+        break
+      end
+      pfServerScan.scanID = id + 1
+    end
+  end
+end
 
 pfServerScan:RegisterEvent("VARIABLES_LOADED")
 pfServerScan:RegisterEvent("ITEM_DATA_LOAD_RESULT")
@@ -2049,11 +2090,24 @@ pfServerScan:SetScript("OnEvent", function()
     pfQuest_server["items"] = pfQuest_server["items"] or {}
     LoadCustomData()
   elseif event == "ITEM_DATA_LOAD_RESULT" then
-    -- fill a custom item's name once the client finishes loading it
-    local id = arg1
-    if arg2 and id and pfQuest_server and pfQuest_server["items"]
+    local id, success = arg1, arg2
+    if id and pfServerScan.scanPending[id] then
+      -- discovery result for an id in our scan window
+      pfServerScan.scanPending[id] = nil
+      pfServerScan.inflight = pfServerScan.inflight - 1
+      if success and not pfDB["items"]["loc"][id] then
+        -- exists on the server but not in the shipped DB -> custom item.
+        -- the data is now cached, so the name resolves immediately.
+        pfQuest_server["items"][id] = true
+        local name = C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
+        if name and name ~= "" then
+          pfDB["items"]["loc"][id] = name
+        end
+      end
+    elseif success and id and pfQuest_server and pfQuest_server["items"]
       and pfQuest_server["items"][id] and not pfDB["items"]["loc"][id]
       and C_Item and C_Item.GetItemNameByID then
+      -- name-fill for a previously-discovered custom id (LoadCustomData path)
       local name = C_Item.GetItemNameByID(id)
       if name and name ~= "" then
         pfDB["items"]["loc"][id] = name
@@ -2063,68 +2117,34 @@ pfServerScan:SetScript("OnEvent", function()
 end)
 
 pfServerScan:SetScript("OnHide", function()
-  ItemRefTooltip:Show()
   LoadCustomData(true)
 end)
 
 pfServerScan:SetScript("OnShow", function()
   this.scanID = 1
+  this.inflight = 0
+  this.scanPending = {}
   pfQuest_server["items"] = {}
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffQuest: " .. pfQuest_Loc["Server scan started..."])
 end)
 
-local ignore, custom_id, custom_skip = {}, nil, nil
 pfServerScan:SetScript("OnUpdate", function()
-  if this.scanID >= this.max then
-    this:Hide()
-    return
+  ScanRefill()
+  pfServerScan.header:SetText(
+    pfQuest_Loc["Scanning server for items..."] .. " " ..
+    string.format("%.1f", 100 * pfServerScan.scanID / pfServerScan.max) .. "%"
+  )
+  -- done once every id has been requested and every result is back
+  if pfServerScan.scanID > pfServerScan.max and pfServerScan.inflight <= 0 then
+    pfServerScan:Hide()
   end
-
-  -- scan X items per update
-  for i = this.scanID, this.scanID + this.perloop do
-    pfServerScan.header:SetText(
-      pfQuest_Loc["Scanning server for items..."] .. " " .. string.format("%.1f", 100 * i / this.max) .. "%"
-    )
-    local link = "item:" .. i .. ":0:0:0"
-
-    ItemRefTooltip:SetOwner(UIParent, "ANCHOR_PRESERVE")
-    ItemRefTooltip:SetHyperlink(link)
-
-    if ItemRefTooltipTextLeft1 and ItemRefTooltipTextLeft1:IsVisible() then
-      local name = ItemRefTooltipTextLeft1:GetText()
-      ItemRefTooltip:Hide()
-
-      -- skip-wait for item retrieval
-      if name == (RETRIEVING_ITEM_INFO or "") then
-        if not ignore[i] then
-          if custom_id == i and custom_skip >= 3 then
-            -- ignore item and proceed
-            ignore[i] = true
-          elseif custom_id == i then
-            -- try again up to 3 times
-            custom_skip = custom_skip + 1
-            return
-          elseif custom_id ~= i then
-            -- give it another try
-            custom_id = i
-            custom_skip = 0
-            return
-          end
-        end
-      end
-
-      -- record only the id in the custom server set; the localized name is
-      -- resolved live from the client (see LoadCustomData), not persisted
-      if not pfDB["items"]["loc"][i] and not ignore[i] then
-        pfQuest_server["items"][i] = true
-      end
-    end
-  end
-
-  this.scanID = this.scanID + this.perloop
 end)
 
 function pfDatabase:ScanServer()
+  if not (C_Item and C_Item.RequestLoadItemDataByID) then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffQuest: server scan requires ClassicAPI.")
+    return
+  end
   pfServerScan:Show()
 end
 
