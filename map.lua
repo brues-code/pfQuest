@@ -93,13 +93,6 @@ local similar_nodes = {}
 -- Coordinate parse cache (shared between UpdateNodes and UpdateMinimap)
 local coord_cache = {}
 
-local function IsEmpty(tabl)
-  for k, v in pairs(tabl) do
-    return false
-  end
-  return true
-end
-
 -- Ensure pfQuestConfig.path exists (fallback if config.lua failed)
 local addon_path = (pfQuestConfig and pfQuestConfig.path) or "Interface\\AddOns\\pfQuest"
 
@@ -821,7 +814,7 @@ function pfMap:DeleteNode(addon, title)
         for coords in pairs(coords_set) do
           if pfMap.nodes[addon][map][coords] then
             pfMap.nodes[addon][map][coords][title] = nil
-            if IsEmpty(pfMap.nodes[addon][map][coords]) then
+            if not next(pfMap.nodes[addon][map][coords]) then
               pfMap.nodes[addon][map][coords] = nil
             else
               -- coord survives with remaining titles; reprocess on next UpdateNodes
