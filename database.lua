@@ -885,6 +885,12 @@ local FLIGHT_NEUTRAL, FLIGHT_HORDE, FLIGHT_ALLIANCE = 0, 1, 2
 local druid_only_nodes = { [62] = true, [63] = true }
 local isdruid = PlayerUtil.GetClassFile() == "DRUID"
 
+-- The Eastern Plaguelands contested towers (Plaguewood 84, Northpass 85,
+-- Eastwall 86, Crown Guard 87) are only usable while your faction holds the
+-- tower and just clutter the map; hide them so only Light's Hope Chapel
+-- (67/68) remains in the zone. TaxiNodes.dbc ids.
+local hidden_nodes = { [84] = true, [85] = true, [86] = true, [87] = true }
+
 -- SearchFlightNodes
 -- Draws flight masters read live from the client's TaxiNodes.dbc via ClassicAPI
 -- (C_TaxiMap.GetTaxiNodesForMap() with no arg = every node on all continents),
@@ -913,6 +919,11 @@ function pfDatabase:SearchFlightNodes(query, meta)
 
     -- Nighthaven/Moonglade flight paths are druid-only
     if druid_only_nodes[node.nodeID] and not isdruid then
+      show = false
+    end
+
+    -- hidden clutter (Eastern Plaguelands contested towers)
+    if hidden_nodes[node.nodeID] then
       show = false
     end
 
