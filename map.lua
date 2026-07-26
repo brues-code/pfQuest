@@ -273,13 +273,21 @@ pfMap.tooltip:SetScript("OnShow", function()
   -- key by name. GetUnitGUID's first return is the same clean string the
   -- tooltip header shows, with no color-code decoration to strip.
   local uname = GameTooltip:GetUnitGUID()
-  if uname and pfMap.tooltips_unit[uname] then
-    for title, obj in pairs(pfMap.tooltips_unit[uname]) do
-      if obj[zone] then
-        pfMap:ShowTooltip(obj[zone], GameTooltip)
-        GameTooltip:Show()
+  if uname then
+    local shown = {}
+    if pfMap.tooltips_unit[uname] then
+      for title, obj in pairs(pfMap.tooltips_unit[uname]) do
+        if obj[zone] then
+          shown[title] = true
+          pfMap:ShowTooltip(obj[zone], GameTooltip)
+          GameTooltip:Show()
+        end
       end
     end
+    -- quest-log fallback: surface slay objectives for quests that aren't in
+    -- the database (no map nodes, so no tooltips_unit entry). Skip titles the
+    -- database path already rendered to avoid duplicate lines.
+    pfMap:ShowQuestLogUnit(uname, GameTooltip, shown)
     return
   end
 
@@ -527,6 +535,44 @@ function pfMap:ShowTooltip(meta, tooltip)
   end
 
   tooltip:Show()
+end
+
+-- Draw a unit's slay objectives straight from the player's quest log,
+-- independent of the pfQuest database. This surfaces tooltip info for quests
+-- we have no DB data for, as long as the mob is a "monster" (slay) objective
+-- of a quest in the log. `skip` is an optional set of quest titles already
+-- rendered (e.g. by the database path) so we don't duplicate them.
+function pfMap:ShowQuestLogUnit(uname, tooltip, skip)
+  local tooltip = tooltip or GameTooltip
+  local skip = skip or {}
+  local found = nil
+
+  for qid = 1, GetNumQuestLogEntries() do
+    local qtitle, _, _, header = compat.GetQuestLogTitle(qid)
+    if qtitle and not header and not skip[qtitle] then
+      local objectives = GetNumQuestLeaderBoards(qid)
+      local titleShown = nil
+      for i = 1, (objectives or 0) do
+        local text, otype = GetQuestLogLeaderBoard(i, qid)
+        if otype == "monster" then
+          local _, _, monsterName, objNum, objNeeded =
+            strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
+          if monsterName and monsterName == uname then
+            if not titleShown then
+              tooltip:AddLine("|cff555555[|cffffcc00!|cff555555]|r " .. qtitle, 1, 1, 0)
+              titleShown = true
+              found = true
+            end
+            local r, g, b = pfMap.tooltip:GetColor(objNum, objNeeded)
+            tooltip:AddLine("|cffaaaaaa- |r" .. monsterName .. ": " .. objNum .. "/" .. objNeeded, r, g, b)
+          end
+        end
+      end
+    end
+  end
+
+  if found then tooltip:Show() end
+  return found
 end
 
 function pfMap:GetMapNameByID(id)
