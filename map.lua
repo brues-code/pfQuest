@@ -659,6 +659,26 @@ function pfMap:GetMapID(cid, mid)
   return id
 end
 
+-- pfQuest's "current zone" for Current Zone tracking: the zone shown on the
+-- world map when it is open, or the player's physical zone when it is closed.
+-- pfQuest syncs the map to the player on close (SetMapToCurrentZone), so
+-- GetCurrentMapZone() already follows this rule on its own. Returns (id, name);
+-- the name drives quest-log-header matching and resolves for custom zones even
+-- when the numeric id (absent from the shipped database) does not.
+function pfMap:GetCurrentZone()
+  local cid, mid = GetCurrentMapContinent(), GetCurrentMapZone()
+  if not map_zone_cache[cid] then
+    map_zone_cache[cid] = { GetMapZones(cid) }
+  end
+  local name = map_zone_cache[cid][mid]
+  local id = (name and pfMap:GetMapIDByName(name)) or customids[GetMapInfo()]
+  -- continent view, or a zone GetMapZones() doesn't enumerate (some cities /
+  -- instances / custom zones): fall back to the physical zone name so closed-
+  -- map tracking still resolves.
+  if not name then name = GetRealZoneText() end
+  return id, name
+end
+
 function pfMap:AddNode(meta)
   if not meta then
     return
@@ -1440,20 +1460,15 @@ pfMap:SetScript("OnEvent", function()
   -- set map to current zone when possible
   if event == "ZONE_CHANGED" or event == "MINIMAP_ZONE_CHANGED"
      or event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
+    -- Keep GetCurrentMapZone() synced to the physical zone while the map is
+    -- closed, so pfMap:GetCurrentZone() resolves the player's zone there.
+    -- (When the map is open the user is browsing and we must not retarget it.)
     if not WorldMapFrame:IsShown() then
       SetMapToCurrentZone()
-      -- Cache the player's physical zone while the map is synced to it.
-      -- GetMapID is safe here because SetMapToCurrentZone() was just called.
-      pfMap.playerZone = pfMap:GetMapIDByName(GetRealZoneText())
-        or pfMap:GetMapID(GetCurrentMapContinent(), GetCurrentMapZone())
-    else
-      -- Map is open; only trust GetRealZoneText() which reads physical zone.
-      -- GetMapID would return the user-browsed zone, not the player's.
-      pfMap.playerZone = pfMap:GetMapIDByName(GetRealZoneText())
     end
 
-    -- Mode 5: refresh tracker from player's physical zone,
-    -- independent of UpdateNodes (which may not run in instances)
+    -- Mode 5: the physical zone changed; refresh from the current zone,
+    -- independent of UpdateNodes (which may not run in instances).
     if pfQuest and pfQuest.tracker and pfQuest.tracker.RefreshZoneTracker then
       pfQuest.tracker.RefreshZoneTracker()
     end
@@ -1493,6 +1508,11 @@ pfMap:SetScript("OnEvent", function()
       end
       pfMap.queue_update = nil
       pfMap:UpdateNodes()
+      -- Current zone changed with the map open (user browsed to another zone):
+      -- follow it in the Current Zone tracker, matching the pins now drawn.
+      if pfQuest and pfQuest.tracker and pfQuest.tracker.RefreshZoneTracker then
+        pfQuest.tracker.RefreshZoneTracker()
+      end
     elseif pfMap.dirtyMaps[newzone] then
       -- same zone, pending writes: coalesce via debounce
       pfMap.queue_update = GetTime()
@@ -1567,6 +1587,11 @@ pfMap:SetScript("OnUpdate", function()
     resetmap = true
   elseif resetmap == true then
     SetMapToCurrentZone()
+    -- Map just closed: the current zone switches from the browsed zone back to
+    -- the player's physical zone, so refresh the Current Zone tracker to follow.
+    if pfQuest and pfQuest.tracker and pfQuest.tracker.RefreshZoneTracker then
+      pfQuest.tracker.RefreshZoneTracker()
+    end
     resetmap = nil
   end
 

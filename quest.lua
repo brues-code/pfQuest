@@ -24,12 +24,27 @@ pfQuest.icons = {}
 pfQuest.collapsedQuestIDs = {}
 
 local function questInPlayerZone(questid)
-  local playerZone = pfMap and pfMap.playerZone
-  if not playerZone or not pfMap.nodes or not pfMap.nodes["PFQUEST"] or not pfMap.nodes["PFQUEST"][playerZone] then
+  -- assign outside an `and` chain: a short-circuit expression truncates the
+  -- function's second return value (currentZoneName) to nil.
+  local currentZone, currentZoneName
+  if pfMap and pfMap.GetCurrentZone then
+    currentZone, currentZoneName = pfMap:GetCurrentZone()
+  end
+
+  -- header-based membership first: a quest counts as current-zone when its
+  -- quest-log zone header matches the current zone. This catches quests pfQuest
+  -- has no node for (e.g. custom-server zones missing from the shipped
+  -- database), which the node scan below can never match.
+  local data = pfQuest.questlog and pfQuest.questlog[questid]
+  if data and data.zone and currentZoneName and data.zone == currentZoneName then
+    return true
+  end
+
+  if not currentZone or not pfMap.nodes or not pfMap.nodes["PFQUEST"] or not pfMap.nodes["PFQUEST"][currentZone] then
     return nil
   end
 
-  for _, coordNode in pairs(pfMap.nodes["PFQUEST"][playerZone]) do
+  for _, coordNode in pairs(pfMap.nodes["PFQUEST"][currentZone]) do
     for _, node in pairs(coordNode) do
       if (node.questid or node.title) == questid then
         return true
@@ -38,6 +53,25 @@ local function questInPlayerZone(questid)
   end
 
   return nil
+end
+
+-- Resolve the quest-log zone header (a zone name) that a quest belongs to.
+-- Prefer ClassicAPI's authoritative header lookup, which stays correct even
+-- when the real zone header is collapsed (vanilla otherwise lists the quest
+-- under a neighbouring visible header). Falls back to the last header seen
+-- during the linear quest-log scan -- the path custom-server quests take,
+-- since they are absent from the database and keyed by title, not a number.
+local function GetQuestZoneHeader(questid, fallbackHeader)
+  if C_QuestLog and C_QuestLog.GetHeaderIndexForQuest and type(questid) == "number" then
+    local hindex = C_QuestLog.GetHeaderIndexForQuest(questid)
+    if hindex and hindex > 0 then
+      local htitle, _, _, hisheader = compat.GetQuestLogTitle(hindex)
+      if hisheader and htitle then
+        return htitle
+      end
+    end
+  end
+  return fallbackHeader
 end
 
 local function questAffectsCurrentZoneTracker(questid)
@@ -441,6 +475,7 @@ function pfQuest:UpdateQuestlog()
   local found = 0
   local change = nil
   local underCollapsedHeader = false
+  local currentHeader = nil
 
   -- iterate over all quests
   for qlogid = 1, 40 do
@@ -449,8 +484,9 @@ function pfQuest:UpdateQuestlog()
     local watched, questid, state
 
     if header then
-      -- track the collapsed state for subsequent quests
+      -- track the collapsed state and name for subsequent quests
       underCollapsedHeader = collapsed and true or false
+      currentHeader = title
     elseif title then
       questid = pfDatabase:GetQuestIDs(qlogid)
       questid = questid and tonumber(questid[1]) or title
@@ -501,6 +537,10 @@ function pfQuest:UpdateQuestlog()
       else
         pfQuest.questlog_tmp[questid] = pfQuest.questlog[questid]
       end
+
+      -- record the quest's zone header so Current Zone mode can match quests
+      -- by their log grouping -- works for custom zones with no database nodes
+      pfQuest.questlog_tmp[questid].zone = GetQuestZoneHeader(questid, currentHeader)
 
       found = found + 1
       if found >= numQuests then

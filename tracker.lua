@@ -684,13 +684,16 @@ function tracker.RefreshZoneTracker()
   tracker.Reset()
 
   local seen = {}
-  local playerZone = pfMap.playerZone
+  -- Current zone follows the world map: the browsed zone while the map is open,
+  -- the player's physical zone while it is closed. Same (id, name) both passes
+  -- below rely on, so the tracker always matches the pins the map is drawing.
+  local currentZone, currentZoneName = pfMap:GetCurrentZone()
   local localQuestNodes = {}
 
-  -- Collect one representative real node per quest in the player's current
-  -- zone so tracker entries can reuse the same icon metadata as map pins.
-  if playerZone and pfMap.nodes["PFQUEST"] and pfMap.nodes["PFQUEST"][playerZone] then
-    for coords, coordNode in pairs(pfMap.nodes["PFQUEST"][playerZone]) do
+  -- Collect one representative real node per quest in the current zone so
+  -- tracker entries can reuse the same icon metadata as map pins.
+  if currentZone and pfMap.nodes["PFQUEST"] and pfMap.nodes["PFQUEST"][currentZone] then
+    for coords, coordNode in pairs(pfMap.nodes["PFQUEST"][currentZone]) do
       for title, node in pairs(coordNode) do
         local qid = node.questid or title
         if pfQuest.questlog[qid] and not pfQuest.questlog[qid].collapsed then
@@ -732,6 +735,27 @@ function tracker.RefreshZoneTracker()
         seen[qid] = true
         node.mode5local = true
         tracker.ButtonAdd(data.title, node)
+      end
+    end
+  end
+
+  -- Header-based zone membership: include quests whose quest-log zone header
+  -- matches the current zone even when pfQuest has no node for them here (e.g.
+  -- custom-server zones absent from the shipped database). Node-backed quests
+  -- were already added above and are skipped via `seen`, so this pass only ever
+  -- adds the node-less remainder with a dummy icon.
+  if currentZoneName then
+    for qid, data in pairs(pfQuest.questlog or {}) do
+      if not seen[qid] and data.zone == currentZoneName and not data.collapsed then
+        local qtitle, _, _, _, _, complete = compat.GetQuestLogTitle(data.qlogid)
+        if qtitle == data.title then
+          seen[qid] = true
+          local img = complete and pfQuestConfig.path .. "\\img\\complete_c"
+            or pfQuestConfig.path .. "\\img\\complete"
+          tracker.ButtonAdd(data.title, {
+            dummy = true, addon = "PFQUEST", texture = img, questid = qid, force = true
+          })
+        end
       end
     end
   end
