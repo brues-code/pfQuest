@@ -872,16 +872,15 @@ function tracker.ButtonAdd(title, node)
     tracker.buttons[id].icon:SetPoint("TOPLEFT", 2, -4)
     tracker.buttons[id].icon:SetSize(12, 12)
 
-    tracker.buttons[id]:RegisterEvent("QUEST_WATCH_UPDATE")
-    tracker.buttons[id]:RegisterEvent("QUEST_LOG_UPDATE")
-    tracker.buttons[id]:RegisterEvent("QUEST_FINISHED")
+    -- Quest-log changes are handled by pfQuest's central event pipeline.
+    -- Child registration would run the same ButtonEvent synchronously on
+    -- every visible row.
 
     tracker.buttons[id]:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
     tracker.buttons[id]:SetScript("OnEnter", tracker.ButtonEnter)
     tracker.buttons[id]:SetScript("OnLeave", tracker.ButtonLeave)
     tracker.buttons[id]:SetScript("OnUpdate", tracker.ButtonUpdate)
-    tracker.buttons[id]:SetScript("OnEvent", tracker.ButtonEvent)
     tracker.buttons[id]:SetScript("OnClick", tracker.ButtonClick)
   end
 
