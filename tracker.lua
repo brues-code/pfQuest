@@ -629,7 +629,11 @@ function tracker.ButtonEvent(self)
     -- Auto-expand active progress until the player explicitly chooses a state.
     -- Manual fold/unfold then wins over the automatic 1-99% behaviour.
     local showObjectives = objectives and objectives > 0 and
-      (expanded or (not expand_overrides[title] and percent > 0 and percent < 100))
+      (expanded or
+        (not expand_overrides[title]
+          and pfQuest_config["trackerautoprogress"] == "1"
+          and percent > 0
+          and percent < 100))
     self.objectivesExpanded = showObjectives and true or nil
 
     if showObjectives then
