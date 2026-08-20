@@ -568,7 +568,18 @@ function pfQuest:UpdateQuestlog()
   -- quest removal events
   for questid, data in pairs(pfQuest.questlog) do
     if not pfQuest.questlog_tmp[questid] then
-      if found >= numQuests and not pfQuest.collapsedQuestIDs[questid] then
+      -- Vanilla hides quests below collapsed headers from both
+      -- GetQuestLogTitle and numQuests. Preserve those entries only while an
+      -- authoritative quest-ID lookup still confirms they are active. This
+      -- lets an abandoned collapsed quest reach REMOVE instead of leaving its
+      -- map nodes and collapsed SavedVariable behind forever.
+      local preserveCollapsed = pfQuest.collapsedQuestIDs[questid] and true or false
+      if preserveCollapsed and type(questid) == "number"
+         and C_QuestLog and C_QuestLog.IsOnQuest then
+        preserveCollapsed = C_QuestLog.IsOnQuest(questid)
+      end
+
+      if found >= numQuests and not preserveCollapsed then
         -- We found all expected quests; this one is truly gone (turned in,
         -- abandoned, etc.).
         queueAdd({ data.title, questid, nil, "REMOVE" })
