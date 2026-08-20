@@ -56,6 +56,7 @@ local function ShowTooltip()
 end
 
 local expand_states = {}
+local expand_overrides = {}
 
 local function GetQuestSortMode()
   return pfQuest_config["trackerquestsort"] == "distance" and "distance" or "level"
@@ -489,11 +490,13 @@ function tracker.ButtonClick()
     -- switch color
     pfQuest_colors[this.title] = { pfMap.str2rgb(this.title .. GetTime()) }
     pfMap:UpdateNodes()
-  elseif expand_states[this.title] == 0 then
-    expand_states[this.title] = 1
-    tracker.ButtonEvent(this)
-  elseif expand_states[this.title] == 1 then
-    expand_states[this.title] = 0
+  elseif tracker.mode == "QUEST_TRACKING" then
+    -- Toggle the state the player can actually see. Partially-complete quests
+    -- auto-expand by default, so checking expand_states alone would make the
+    -- first click appear to do nothing. Once clicked, the explicit choice
+    -- takes precedence over auto-expansion for the rest of the session.
+    expand_states[this.title] = this.objectivesExpanded and 0 or 1
+    expand_overrides[this.title] = true
     tracker.ButtonEvent(this)
   end
 end
@@ -623,8 +626,13 @@ function tracker.ButtonEvent(self)
       percent = cur / max * 100
     end
 
-    -- expand button to show objectives
-    if objectives and (expanded or (percent > 0 and percent < 100)) then
+    -- Auto-expand active progress until the player explicitly chooses a state.
+    -- Manual fold/unfold then wins over the automatic 1-99% behaviour.
+    local showObjectives = objectives and objectives > 0 and
+      (expanded or (not expand_overrides[title] and percent > 0 and percent < 100))
+    self.objectivesExpanded = showObjectives and true or nil
+
+    if showObjectives then
       self:SetHeight(entryheight + objectives * fontsize)
 
       for i = 1, objectives, 1 do
