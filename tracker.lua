@@ -55,6 +55,11 @@ local function ShowTooltip()
   end
 end
 
+-- Session-local fold state per quest title, cleared on reload:
+--   nil = untouched, the configured defaults decide
+--   0   = explicitly folded by the player
+--   1   = explicitly unfolded by the player
+-- An explicit choice outranks automatic in-progress unfolding.
 local expand_states = {}
 
 local function GetQuestSortMode()
@@ -489,11 +494,13 @@ function tracker.ButtonClick()
     -- switch color
     pfQuest_colors[this.title] = { pfMap.str2rgb(this.title .. GetTime()) }
     pfMap:UpdateNodes()
-  elseif expand_states[this.title] == 0 then
-    expand_states[this.title] = 1
-    tracker.ButtonEvent(this)
-  elseif expand_states[this.title] == 1 then
-    expand_states[this.title] = 0
+  elseif tracker.mode == "QUEST_TRACKING" and this.hasObjectives then
+    -- Toggle the state the player can actually see. Partially-complete quests
+    -- unfold automatically, so toggling the stored value alone would make the
+    -- first click appear to do nothing. Writing a value here is also what marks
+    -- the quest as explicitly chosen, which then outranks auto-unfolding.
+    -- Rows with nothing to unfold are skipped so they never record a state.
+    expand_states[this.title] = this.objectivesExpanded and 0 or 1
     tracker.ButtonEvent(this)
   end
 end
@@ -590,13 +597,6 @@ function tracker.ButtonEvent(self)
     local cur, max = 0, 0
     local percent = 0
 
-    -- write expand state
-    if not expand_states[title] then
-      expand_states[title] = pfQuest_config["trackerexpand"] == "1" and 1 or 0
-    end
-
-    local expanded = expand_states[title] == 1 and true or nil
-
     if objectives and objectives > 0 then
       -- populate cache and compute progress in one pass
       for i = 1, objectives, 1 do
@@ -623,8 +623,23 @@ function tracker.ButtonEvent(self)
       percent = cur / max * 100
     end
 
-    -- expand button to show objectives
-    if objectives and (expanded or (percent > 0 and percent < 100)) then
+    -- A recorded state is an explicit player choice and always wins. Without
+    -- one, fall back to the configured defaults: unfold everything, or unfold
+    -- only while progress is partial.
+    local manual = expand_states[title]
+    local hasObjectives = objectives and objectives > 0 and true or nil
+    local showObjectives = hasObjectives and
+      (manual == 1 or
+        (manual == nil
+          and (pfQuest_config["trackerexpand"] == "1"
+            or (pfQuest_config["trackerautoprogress"] == "1"
+              and percent > 0
+              and percent < 100))))
+
+    self.hasObjectives = hasObjectives
+    self.objectivesExpanded = showObjectives and true or nil
+
+    if showObjectives then
       self:SetHeight(entryheight + objectives * fontsize)
 
       for i = 1, objectives, 1 do
@@ -966,6 +981,8 @@ function tracker.Reset()
     button.title = nil
     button.perc = nil
     button.inLocalZone = nil
+    button.hasObjectives = nil
+    button.objectivesExpanded = nil
     button.empty = true
     button:SetHeight(0)
     button:Hide()
@@ -973,6 +990,24 @@ function tracker.Reset()
   -- reverse map is only valid while buttons hold titles; clear on full reset
   for k in pairs(tracker.buttonByTitle) do
     tracker.buttonByTitle[k] = nil
+  end
+
+  -- Forget fold choices for quests that have left the log, so the session
+  -- table cannot grow by title forever. Skipped while the questlog is empty:
+  -- pfQuest:ResetAll() clears it before a rebuild, and pruning against an
+  -- empty log would discard every choice the player has made.
+  if pfQuest.questlog and next(pfQuest.questlog) then
+    local live = {}
+    for _, data in pairs(pfQuest.questlog) do
+      if data.title then
+        live[data.title] = true
+      end
+    end
+    for title in pairs(expand_states) do
+      if not live[title] then
+        expand_states[title] = nil
+      end
+    end
   end
 
   -- add tracked quests
