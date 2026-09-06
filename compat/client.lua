@@ -1,6 +1,4 @@
 -- some abstraction to allow multi-client code
-local _, _, _, client = GetBuildInfo()
-client = client or 11200
 
 local _G = getfenv(0)
 local gfind = string.gmatch or string.gfind
@@ -9,7 +7,7 @@ pfQuestCompat = {}
 pfQuestCompat.mod = mod or math.mod
 pfQuestCompat.gfind = string.gmatch or string.gfind
 pfQuestCompat.itemsuffix = ":0:0:0"
-pfQuestCompat.client = client
+pfQuestCompat.client = INTERFACE_VERSION or 11200
 
 -- addon-compat: use and cache the original function if CTMod overwrites global API calls
 local GetQuestLogTitle = CT_QuestLevels_oldGetQuestLogTitle or GetQuestLogTitle
@@ -42,27 +40,32 @@ pfQuestCompat.InsertQuestLink = function(questid, name)
   end
 end
 
--- do the best to detect the minimap arrow
-local minimaparrow = ({ Minimap:GetChildren() })[9]
-for k, v in pairs({ Minimap:GetChildren() }) do
-  if v:IsObjectType("Model") and not v:GetName() then
-    if string.find(strlower(v:GetModel()), "interface\\minimap\\minimaparrow") then
-      minimaparrow = v
-      break
+pfQuestCompat.GetPlayerFacing = GetPlayerFacing
+
+if not pfQuestCompat.GetPlayerFacing then
+  -- do the best to detect the minimap arrow
+  local minimaparrow = ({ Minimap:GetChildren() })[9]
+  for k, v in pairs({ Minimap:GetChildren() }) do
+    if v:IsObjectType("Model") and not v:GetName() then
+      if string.find(strlower(v:GetModel()), "interface\\minimap\\minimaparrow") then
+        minimaparrow = v
+        break
+      end
     end
   end
-end
 
--- always keep player arrow on top
-if minimaparrow then
-  minimaparrow:SetFrameLevel(8)
-end
-
--- return the player facing based on the minimap arrow
-pfQuestCompat.GetPlayerFacing = GetPlayerFacing
-  or function()
-    return minimaparrow:GetFacing()
+  -- always keep player arrow on top
+  if minimaparrow then
+    minimaparrow:SetFrameLevel(8)
   end
+
+  -- return the player facing based on the minimap arrow
+  pfQuestCompat.GetPlayerFacing = GetPlayerFacing
+    or function()
+      return minimaparrow:GetFacing()
+    end
+end
+
 
 -- overwrite the out-of-memory popup on vanilla clients, to provide some help
 -- on how to increase the limits, and also displaying a link to an example.

@@ -7,9 +7,20 @@
 ## OptionalDeps: pfUI
 ## SavedVariablesPerCharacter: pfQuest_config, pfBrowser_fav, pfQuest_history, pfQuest_colors, pfQuest_server, pfQuest_track
 
-# ClassicAPI-less fallback. ClassicAPI redirects this read to
-# pfQuest_ClassicAPI.toc, so the client only ever reaches THIS file when the
-# DLL is missing. pfQuest's core calls C_Item and EventUtil directly, so
-# without the DLL it cannot run -- load the notice and nothing else.
+# Selected by ClassicAPI via its TOC redirect. The plain pfQuest.toc is a
+# ClassicAPI-less notice; this file is the real load list.
 
 API_Check.lua
+
+init\data.xml
+init\enUS.xml
+init\koKR.xml
+init\frFR.xml
+init\deDE.xml
+init\zhCN.xml
+init\zhTW.xml
+init\esES.xml
+init\ruRU.xml
+init\ptBR.xml
+
+init\addon.xml

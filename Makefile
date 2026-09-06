@@ -30,14 +30,16 @@ enUS koKR frFR deDE zhCN esES ruRU ptBR:
 	cp -f *.lua LICENSE README.md release/$@/pfQuest/
 	cp -f init/addon.xml init/data.xml init/enUS.xml init/${LOCALE}.xml release/$@/pfQuest/init
 	cp -f pfQuest.toc release/$@/pfQuest/pfQuest.toc
+	cp -f pfQuest_ClassicAPI.toc release/$@/pfQuest/pfQuest_ClassicAPI.toc
 
-	# generate new toc file
-	sed -i '/init\\/d' release/$@/pfQuest/pfQuest.toc
-	sed -i '/^[[:space:]]*$$/d' release/$@/pfQuest/pfQuest.toc
-	/bin/echo 'init\data.xml' >> release/$@/pfQuest/pfQuest.toc
-	/bin/echo 'init\enUS.xml' >> release/$@/pfQuest/pfQuest.toc
-	/bin/echo 'init\$(LOCALE).xml' >> release/$@/pfQuest/pfQuest.toc
-	/bin/echo 'init\addon.xml' >> release/$@/pfQuest/pfQuest.toc
+	# pfQuest.toc is a ClassicAPI-less stub with no init lines, so it ships as-is.
+	# Slim the ClassicAPI load list (the redirect target) to this locale's files.
+	sed -i '/init\\/d' release/$@/pfQuest/pfQuest_ClassicAPI.toc
+	sed -i '/^[[:space:]]*$$/d' release/$@/pfQuest/pfQuest_ClassicAPI.toc
+	/bin/echo 'init\data.xml' >> release/$@/pfQuest/pfQuest_ClassicAPI.toc
+	/bin/echo 'init\enUS.xml' >> release/$@/pfQuest/pfQuest_ClassicAPI.toc
+	/bin/echo 'init\$(LOCALE).xml' >> release/$@/pfQuest/pfQuest_ClassicAPI.toc
+	/bin/echo 'init\addon.xml' >> release/$@/pfQuest/pfQuest_ClassicAPI.toc
 
 	echo $(GITREV) > release/$@/pfQuest/gitrev.txt
 	( cd release/$@; zip -9qr ../pfQuest-$@.zip pfQuest )
