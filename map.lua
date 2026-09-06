@@ -54,10 +54,7 @@ local minimap_sizes = setmetatable(pfDB["minimap"], {
     if not mapID then
       return false
     end
-    local w, h
-    if C_Map and C_Map.GetMapWorldSize then
-      w, h = C_Map.GetMapWorldSize(mapID)
-    end
+    local w, h = C_Map.GetMapWorldSize(mapID)
     local size = (w and h) and { w, h } or false
     rawset(t, mapID, size)
     return size
@@ -630,13 +627,11 @@ end
 -- Map texture/dir name (GetMapInfo()) -> areaID, for maps GetMapZones() does
 -- not enumerate (cities, instances). Built live from the client's
 -- WorldMapArea.dbc via ClassicAPI so every city map (Orgrimmar, Undercity, …)
--- resolves to its zone id and shows its content; falls back to just Alterac
--- Valley when the API is absent.
+-- resolves to its zone id and shows its content. Alterac Valley is seeded
+-- explicitly so it survives even if the client does not enumerate it.
 local customids = { ["AlteracValley"] = 2597 }
-if C_Map and C_Map.GetMapAreaIDs then
-  for dir, areaID in pairs(C_Map.GetMapAreaIDs()) do
-    customids[dir] = areaID
-  end
+for dir, areaID in pairs(C_Map.GetMapAreaIDs()) do
+  customids[dir] = areaID
 end
 
 local map_zone_cache = {}

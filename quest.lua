@@ -62,7 +62,7 @@ end
 -- during the linear quest-log scan -- the path custom-server quests take,
 -- since they are absent from the database and keyed by title, not a number.
 local function GetQuestZoneHeader(questid, fallbackHeader)
-  if C_QuestLog and C_QuestLog.GetHeaderIndexForQuest and type(questid) == "number" then
+  if type(questid) == "number" then
     local hindex = C_QuestLog.GetHeaderIndexForQuest(questid)
     if hindex and hindex > 0 then
       local htitle, _, _, hisheader = compat.GetQuestLogTitle(hindex)

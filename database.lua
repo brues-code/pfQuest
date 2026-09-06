@@ -318,7 +318,7 @@ pfDatabase.Reload = function()
   -- survives pfQuest-turtle reassigning pfDB.zones.loc (TURTLE_DE_PATCH) before
   -- it calls Reload(). loc/revloc always point at the same cached tables, so
   -- handles captured elsewhere (e.g. browser) stay valid.
-  if C_Map and C_Map.GetAreas and not zonenames then
+  if not zonenames then
     zonenames = C_Map.GetAreas()
     zoneids = {}
     for id, name in pairs(zonenames) do
@@ -639,9 +639,6 @@ end
 -- when unlearned), which replaces the old professions name table + skill-window
 -- name scan.
 function pfDatabase:GetPlayerSkill(skill)
-  if not (C_SpellBook and C_SpellBook.GetSkillLineRank) then
-    return false
-  end
   return (C_SpellBook.GetSkillLineRank(skill)) or false
 end
 
@@ -823,10 +820,6 @@ end
 -- ClassicAPI (C_Map.GetAreaTriggerInfo) instead of a shipped coordinate table.
 -- Adds a map node for the resolved zone and returns its map table.
 function pfDatabase:SearchAreaTriggerID(id, meta, maps, prio)
-  if not (C_Map and C_Map.GetAreaTriggerInfo) then
-    return maps
-  end
-
   local trigger = C_Map.GetAreaTriggerInfo(id)
   -- areaID/mapX/mapY are absent when the point can't be resolved to a zone rect
   if not trigger or not trigger.areaID or not trigger.mapX or not trigger.mapY then
@@ -940,10 +933,6 @@ local hidden_nodes = { [84] = true, [85] = true, [86] = true, [87] = true }
 -- factions. Returns its map table.
 function pfDatabase:SearchFlightNodes(query, meta)
   local maps = {}
-  if not (C_TaxiMap and C_TaxiMap.GetTaxiNodesForMap) then
-    return maps
-  end
-
   meta = meta or {}
   local want = (query and query.faction and string.lower(query.faction))
     or (UnitFactionGroup("player") and string.lower(UnitFactionGroup("player")))
@@ -1141,19 +1130,17 @@ local function GetZoneIndex()
   if zone_index then return zone_index end
   zone_index = {}
 
-  if C_Map and C_Map.GetMapOverlays then
-    for parent in pairs(pfDB["zones"]["loc"]) do
-      local overlays = C_Map.GetMapOverlays(parent)
-      if overlays then
-        for _, ov in ipairs(overlays) do
-          local sub = ov.areaID
-          if sub and sub > 0 then
-            local cx = (ov.hitRectLeft + ov.hitRectRight) / 2 / 1002 * 100
-            local cy = (ov.hitRectTop + ov.hitRectBottom) / 2 / 668 * 100
-            local w = (ov.hitRectRight - ov.hitRectLeft) / 1002 * 100
-            local h = (ov.hitRectBottom - ov.hitRectTop) / 668 * 100
-            zone_index[sub] = { parent, w, h, cx, cy }
-          end
+  for parent in pairs(pfDB["zones"]["loc"]) do
+    local overlays = C_Map.GetMapOverlays(parent)
+    if overlays then
+      for _, ov in ipairs(overlays) do
+        local sub = ov.areaID
+        if sub and sub > 0 then
+          local cx = (ov.hitRectLeft + ov.hitRectRight) / 2 / 1002 * 100
+          local cy = (ov.hitRectTop + ov.hitRectBottom) / 2 / 668 * 100
+          local w = (ov.hitRectRight - ov.hitRectLeft) / 1002 * 100
+          local h = (ov.hitRectBottom - ov.hitRectTop) / 668 * 100
+          zone_index[sub] = { parent, w, h, cx, cy }
         end
       end
     end
@@ -2076,10 +2063,10 @@ local function LoadCustomData(always)
 
   if icount > 0 or always then
     for id in pairs(pfQuest_server["items"]) do
-      local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
+      local name = C_Item.GetItemNameByID(id)
       if name and name ~= "" then
         pfDB["items"]["loc"][id] = name
-      elseif C_Item and C_Item.RequestLoadItemDataByID then
+      else
         C_Item.RequestLoadItemDataByID(id)
       end
     end
@@ -2162,14 +2149,13 @@ pfServerScan:SetScript("OnEvent", function()
         -- exists on the server but not in the shipped DB -> custom item.
         -- the data is now cached, so the name resolves immediately.
         pfQuest_server["items"][id] = true
-        local name = C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
+        local name = C_Item.GetItemNameByID(id)
         if name and name ~= "" then
           pfDB["items"]["loc"][id] = name
         end
       end
     elseif success and id and pfQuest_server and pfQuest_server["items"]
-      and pfQuest_server["items"][id] and not pfDB["items"]["loc"][id]
-      and C_Item and C_Item.GetItemNameByID then
+      and pfQuest_server["items"][id] and not pfDB["items"]["loc"][id] then
       -- name-fill for a previously-discovered custom id (LoadCustomData path)
       local name = C_Item.GetItemNameByID(id)
       if name and name ~= "" then
@@ -2204,10 +2190,6 @@ pfServerScan:SetScript("OnUpdate", function()
 end)
 
 function pfDatabase:ScanServer()
-  if not (C_Item and C_Item.RequestLoadItemDataByID) then
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffQuest: server scan requires ClassicAPI.")
-    return
-  end
   pfServerScan:Show()
 end
 
