@@ -568,7 +568,18 @@ function pfQuest:UpdateQuestlog()
   -- quest removal events
   for questid, data in pairs(pfQuest.questlog) do
     if not pfQuest.questlog_tmp[questid] then
-      if found >= numQuests and not pfQuest.collapsedQuestIDs[questid] then
+      -- Vanilla hides quests below collapsed headers from both
+      -- GetQuestLogTitle and numQuests, so the scan alone cannot tell a still
+      -- collapsed quest from an abandoned one. Ask the quest log directly.
+      -- Without this the collapsed marker blocks the REMOVE path that is the
+      -- only thing clearing it, pinning dead map nodes for good.
+      -- Title-keyed custom quests have no id to query and stay conservative.
+      local preserveCollapsed = pfQuest.collapsedQuestIDs[questid] and true or false
+      if preserveCollapsed and type(questid) == "number" then
+        preserveCollapsed = C_QuestLog.IsOnQuest(questid)
+      end
+
+      if found >= numQuests and not preserveCollapsed then
         -- We found all expected quests; this one is truly gone (turned in,
         -- abandoned, etc.).
         queueAdd({ data.title, questid, nil, "REMOVE" })
