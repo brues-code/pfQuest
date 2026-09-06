@@ -1,10 +1,10 @@
+local addonName = ...
 -- multi api compat
 local compat = pfQuestCompat
 local L = pfQuest_Loc
 
 -- Performance: cache frequently-used globals
 local pairs = pairs
-local getn = table.getn
 
 pfQuest_history = {}
 pfQuest_colors = {}
@@ -137,7 +137,7 @@ StaticPopupDialogs["PFQUEST_RESET"] = {
   hideOnEscape = 1,
 }
 
-pfQuestConfig = CreateFrame("Frame", "pfQuestConfig", UIParent)
+local pfQuestConfig = CreateFrame("Frame", "pfQuestConfig", UIParent)
 pfQuestConfig:Hide()
 pfQuestConfig:SetSize(280, 550)
 pfQuestConfig:SetPoint("CENTER", 0, 0)
@@ -163,23 +163,8 @@ pfQuestConfig.vpos = 40
 pfUI.api.CreateBackdrop(pfQuestConfig, nil, true, 0.75)
 table.insert(UISpecialFrames, "pfQuestConfig")
 
--- detect current addon path
-local tocs = { "", "-master", "-turtle" }
-for _, name in pairs(tocs) do
-  local current = string.format("pfQuest%s", name)
-  local _, title = GetAddOnInfo(current)
-  if title then
-    pfQuestConfig.path = "Interface\\AddOns\\" .. current
-    pfQuestConfig.version = tostring(GetAddOnMetadata(current, "Version"))
-    break
-  end
-end
-
--- fallback if no matching addon found
-if not pfQuestConfig.path then
-  pfQuestConfig.path = "Interface\\AddOns\\pfQuest"
-  pfQuestConfig.version = "unknown"
-end
+pfQuestConfig.path = "Interface\\AddOns\\" .. addonName
+pfQuestConfig.version = tostring(GetAddOnMetadata(addonName, "Version"))
 
 pfQuestConfig.title = pfQuestConfig:CreateFontString("Status", "LOW", "GameFontNormal")
 pfQuestConfig.title:SetFontObject(GameFontWhite)
