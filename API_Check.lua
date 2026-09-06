@@ -8,13 +8,11 @@ do
   -- nothing but this file, so there is nothing to disable, only a notice to
   -- show.
   --
-  -- The floor below is the redirect version itself (v1.11.0), so the "too old"
-  -- gate is currently a no-op: reaching this file through pfQuest_ClassicAPI.toc
-  -- already proves ClassicAPI is at least that new. pfQuest's core does reach
-  -- for C_Item and EventUtil, which arrived later -- raise the floor to that
-  -- version when you want the popup to name the cause instead of letting the
-  -- missing-API errors surface on their own.
-  local PFQUEST_CLASSIC_API_MIN     = 11100  -- (X*10000 + Y*100 + Z)
+  -- The route arrow resolves node positions through the C_Map coordinate
+  -- transforms (GetWorldPosFromMapPos), added in ClassicAPI v1.14.0. Below
+  -- that they are simply absent, so the arrow would throw on every frame
+  -- rather than explain itself -- which is what this floor is for.
+  local PFQUEST_CLASSIC_API_MIN     = 11400  -- (X*10000 + Y*100 + Z)
   local PFQUEST_CLASSIC_API_LATEST  = PFQUEST_CLASSIC_API_MIN
   local PFQUEST_CLASSIC_API_WEBSITE = "https://github.com/brues-code/ClassicAPI"
   local PFQUEST_CLASSIC_API_LATEST_URL = PFQUEST_CLASSIC_API_WEBSITE .. "/releases/latest"

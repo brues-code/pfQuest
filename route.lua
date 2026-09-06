@@ -1,10 +1,6 @@
 -- Performance: cache frequently-used globals
 local pairs = pairs
 local floor, ceil, sqrt, abs = math.floor, math.ceil, math.sqrt, math.abs
--- WoW's global atan2 returns degrees; fallback for clients without it
-local atan2 = atan2 or function(x, y)
-  return math.deg(math.atan2(x, y))
-end
 local min, max = math.min, math.max
 local GetTime = GetTime
 
@@ -463,12 +459,12 @@ pfQuest.route.arrow:SetScript("OnShow", function()
 end)
 
 local invalid, lasttarget
-local xplayer, yplayer, wrongmap
-local xDelta, yDelta, dir, angle
-local player, perc, column, row, xstart, ystart, xend, yend
-local area, alpha, texalpha, color
 local defcolor = "|cffffcc00"
-local r, g, b
+
+-- Everything else the arrow handler needs is per-frame scratch, so it lives
+-- inside the function as locals rather than up here. A closure may only carry
+-- 32 upvalues and this one already sat at that ceiling; locals are register
+-- slots, so they are both cheaper to read and free of the limit.
 
 pfQuest.route.arrow:SetScript("OnUpdate", function()
   -- abort if the frame is not initialized yet
@@ -476,12 +472,26 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
     return
   end
 
-  xplayer, yplayer = GetPlayerMapPosition("player")
-  wrongmap = xplayer == 0 and yplayer == 0 and true or nil
-  target = this.parent.coords and this.parent.coords[1] and this.parent.coords[1][4] and this.parent.coords[1] or nil
+  local target = this.parent.coords and this.parent.coords[1] and this.parent.coords[1][4] and this.parent.coords[1]
+    or nil
 
-  -- disable arrow on invalid map/route
-  if not target or wrongmap or pfQuest_config["arrow"] == "0" then
+  -- Resolve both ends in world space. UnitPosition and GetWorldPosFromMapPos
+  -- share axes (x north, y west) and Map.dbc continent ids, so the delta is
+  -- true yards and stays correct whichever zone the world map happens to show.
+  local pWest, pNorth, pZ, pContinent = UnitPosition("player")
+  local tContinent, tNorth, tWest
+  if target then
+    tContinent, tNorth, tWest = pfMap:GetWorldPos(target[7], target[1], target[2])
+  end
+
+  -- disable arrow without a target the player can actually be pointed at
+  if
+    not target
+    or not pNorth
+    or not tContinent
+    or tContinent ~= pContinent
+    or pfQuest_config["arrow"] == "0"
+  then
     if invalid and invalid < GetTime() then
       this:Hide()
     elseif not invalid then
@@ -493,41 +503,34 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
     invalid = nil
   end
 
-  -- arrow positioning stolen from TomTomVanilla.
-  -- all credits to the original authors:
-  -- https://github.com/cralor/TomTomVanilla
-  xDelta = (target[1] - xplayer * 100) * 1.5
-  yDelta = (target[2] - yplayer * 100)
-  dir = atan2(xDelta, -yDelta)
-  dir = dir > 0 and (math.pi * 2) - dir or -dir
-  if dir < 0 then
-    dir = dir + 360
-  end
-  angle = math.rad(dir)
+  -- GetPlayerFacing is 0 at north and increases toward west, and world x/y are
+  -- north/west, so atan2(west, north) is a bearing in that same frame. The
+  -- difference is how far the target sits from where the player is looking.
+  local dNorth, dWest = tNorth - pNorth, tWest - pWest
+  local yards = sqrt(dNorth * dNorth + dWest * dWest)
+  local angle = math.atan2(dWest, dNorth) - GetPlayerFacing()
 
-  player = GetPlayerFacing()
-  angle = angle - player
-  perc = math.abs(((math.pi - math.abs(angle)) / math.pi))
-  r, g, b = pfUI.api.GetColorGradient(floor(perc * 100) / 100)
-  cell = modulo(floor(angle / (math.pi * 2) * 108 + 0.5), 108)
-  column = modulo(cell, 9)
-  row = floor(cell / 9)
-  xstart = (column * 56) / 512
-  ystart = (row * 42) / 512
-  xend = ((column + 1) * 56) / 512
-  yend = ((row + 1) * 42) / 512
+  local perc = math.abs(((math.pi - math.abs(angle)) / math.pi))
+  local r, g, b = pfUI.api.GetColorGradient(floor(perc * 100) / 100)
+  local cell = modulo(floor(angle / (math.pi * 2) * 108 + 0.5), 108)
+  local column = modulo(cell, 9)
+  local row = floor(cell / 9)
+  local xstart = (column * 56) / 512
+  local ystart = (row * 42) / 512
+  local xend = ((column + 1) * 56) / 512
+  local yend = ((row + 1) * 42) / 512
 
   -- guess area based on node count
-  area = target[3].priority and target[3].priority or 1
+  local area = target[3].priority and target[3].priority or 1
   area = max(1, area)
   area = min(20, area)
   area = (area / 10) + 1
 
-  alpha = target[4] - area
+  local alpha = target[4] - area
   alpha = alpha > 1 and 1 or alpha
   alpha = alpha < 0.5 and 0.5 or alpha
 
-  texalpha = (1 - alpha) * 2
+  local texalpha = (1 - alpha) * 2
   texalpha = texalpha > 1 and 1 or texalpha
   texalpha = texalpha < 0 and 0 or texalpha
 
@@ -540,7 +543,7 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
   -- recalculate values on target change
   if target ~= lasttarget then
     -- calculate difficulty color
-    color = defcolor
+    local color = defcolor
     if tonumber(target[3]["qlvl"]) then
       color = pfMap:HexDifficultyColor(tonumber(target[3]["qlvl"]))
     end
@@ -570,10 +573,11 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
     this.description:SetText(desc .. "|r.")
   end
 
-  -- only refresh distance text on change
-  local distance = floor(target[4] * 10) / 10
+  -- only refresh distance text on change. Whole yards: sub-yard precision is
+  -- noise at this scale, and it keeps the update to once per yard travelled.
+  local distance = floor(yards)
   if distance ~= this.distance.number then
-    this.distance:SetText("|cffaaaaaa" .. pfQuest_Loc["Distance"] .. ": " .. string.format("%.1f", distance))
+    this.distance:SetFormattedText("|cffaaaaaa%s: %d", pfQuest_Loc["Distance"], distance)
     this.distance.number = distance
   end
 

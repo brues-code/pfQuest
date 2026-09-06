@@ -654,6 +654,41 @@ function pfMap:GetMapID(cid, mid)
   return id
 end
 
+-- Convert a node's map-relative position to absolute world coordinates.
+-- pfQuest map keys are AreaTable ids (GetMapIDByName / C_Map.GetMapAreaIDs),
+-- which is exactly what C_Map.GetWorldPosFromMapPos accepts. Returns
+-- continentID, worldX (north), worldY (west) -- the same axes and Map.dbc
+-- continent ids UnitPosition reports, so the two compose with no conversion.
+--
+-- A node never moves, so each map+coordinate is resolved once. `false` is
+-- cached for coordinates the client cannot place (a map with no world rect),
+-- to avoid asking again every frame.
+local worldpos_cache = {}
+function pfMap:GetWorldPos(map, x, y)
+  if not map or not x or not y then
+    return nil
+  end
+
+  local mapcache = worldpos_cache[map]
+  if not mapcache then
+    mapcache = {}
+    worldpos_cache[map] = mapcache
+  end
+
+  local key = x .. "|" .. y
+  local entry = mapcache[key]
+  if entry == nil then
+    local continentID, world = C_Map.GetWorldPosFromMapPos(map, { x = x / 100, y = y / 100 })
+    entry = (continentID and world) and { continentID, world.x, world.y } or false
+    mapcache[key] = entry
+  end
+
+  if not entry then
+    return nil
+  end
+  return entry[1], entry[2], entry[3]
+end
+
 -- pfQuest's "current zone" for Current Zone tracking: the zone shown on the
 -- world map when it is open, or the player's physical zone when it is closed.
 -- pfQuest syncs the map to the player on close (SetMapToCurrentZone), so
@@ -1258,8 +1293,10 @@ function pfMap:UpdateNodes()
             watched = true
           end
           -- Route candidates are positional tuples consumed by route.lua:
-          -- { x, y, node, distance, watched, questid }.
-          pfQuest.route:AddPoint({ x, y, pfMap.pins[i], nil, watched, questid })
+          -- { x, y, node, distance, watched, questid, map }.
+          -- x/y stay map-relative for drawing the route on the world map; the
+          -- map id lets the arrow resolve the same point in world space.
+          pfQuest.route:AddPoint({ x, y, pfMap.pins[i], nil, watched, questid, map })
         end
 
         -- hide cluster nodes if set
