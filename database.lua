@@ -826,8 +826,8 @@ function pfDatabase:SearchAreaTriggerID(id, meta, maps, prio)
     return maps
   end
 
-  local maps = maps or {}
-  local prio = prio or 1
+  maps = maps or {}
+  prio = prio or 1
   local zone = trigger.areaID
 
   -- add all gathered data
@@ -859,8 +859,8 @@ function pfDatabase:SearchMobID(id, meta, maps, prio)
     return maps
   end
 
-  local maps = maps or {}
-  local prio = prio or 1
+  maps = maps or {}
+  prio = prio or 1
   meta = meta or {}
 
   -- hoist invariant fields outside the coord loop; these are the same for
@@ -1057,7 +1057,7 @@ end
 -- Adds map nodes for each, saves it to the persistent
 -- tracking variable per character and returns a map table
 function pfDatabase:TrackMeta(list, state)
-  local list = alias[list] and alias[list] or list
+  list = alias[list] and alias[list] or list
   local identifier = "TRACK_" .. string.upper(list)
 
   local meta = {
@@ -1091,7 +1091,7 @@ function pfDatabase:TrackMeta(list, state)
 
   -- save and perform the actual meta tracking
   pfQuest_track[list] = { query, meta }
-  local maps = pfDatabase:SearchMetaRelation(query, meta)
+  maps = pfDatabase:SearchMetaRelation(query, meta)
 
   -- remove invalid results
   if not maps then
@@ -1231,8 +1231,8 @@ function pfDatabase:SearchObjectID(id, meta, maps, prio)
   end
 
   local skill, caption = pfDatabase:SearchObjectSkill(id)
-  local maps = maps or {}
-  local prio = prio or 1
+  maps = maps or {}
+  prio = prio or 1
   meta = meta or {}
 
   -- hoist invariant fields outside the coord loop
@@ -1285,8 +1285,8 @@ function pfDatabase:SearchItemID(id, meta, maps, allowedTypes)
     return maps
   end
 
-  local maps = maps or {}
-  local meta = meta or {}
+  maps = maps or {}
+  meta = meta or {}
 
   meta["itemid"] = id
   meta["item"] = pfDB.items.loc[id]
@@ -1381,7 +1381,7 @@ end
 -- Returns its map table
 function pfDatabase:SearchVendor(item, meta)
   local maps = {}
-  local meta = meta or {}
+  meta = meta or {}
   local bestmap, bestscore = nil, 0
 
   for id in pairs(pfDatabase:GetIDByName(item, "items")) do
@@ -1410,8 +1410,8 @@ function pfDatabase:SearchQuestID(id, meta, maps)
   if not quests[id] then
     return
   end
-  local maps = maps or {}
-  local meta = meta or {}
+  maps = maps or {}
+  meta = meta or {}
 
   meta["questid"] = id
   meta["quest"] = pfDatabase:GetQuestText(id, "T")
