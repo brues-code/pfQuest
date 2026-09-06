@@ -1,13 +1,11 @@
 -- Performance: cache frequently-used globals
 local pairs = pairs
 local floor, ceil, sqrt, abs = math.floor, math.ceil, math.sqrt, math.abs
-local sin, cos, rad, pi = math.sin, math.cos, math.rad, math.pi
 -- WoW's global atan2 returns degrees; fallback for clients without it
 local atan2 = atan2 or function(x, y)
   return math.deg(math.atan2(x, y))
 end
 local min, max = math.min, math.max
-local getn, insert, sort = table.getn, table.insert, table.sort
 local GetTime = GetTime
 
 -- table.getn doesn't return sizes on tables that
@@ -181,7 +179,11 @@ pfQuest.route.SetTarget = function(node, default)
       or node.texture ~= targetTexture
     )
   then
-    pfMap.queue_update = true
+    -- queue_update is a timestamp: pfMap's OnUpdate debounce does
+    -- `queue_update + 0.25 < GetTime()`, which errors on a boolean. NodeClick
+    -- happened to overwrite it right after calling here, so this only surfaced
+    -- for callers that don't.
+    pfMap.queue_update = GetTime()
   end
 
   targetTitle = node and node.title or nil
@@ -503,7 +505,7 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
   end
   angle = math.rad(dir)
 
-  player = pfQuestCompat.GetPlayerFacing()
+  player = GetPlayerFacing()
   angle = angle - player
   perc = math.abs(((math.pi - math.abs(angle)) / math.pi))
   r, g, b = pfUI.api.GetColorGradient(floor(perc * 100) / 100)
@@ -646,7 +648,7 @@ pfQuest.route.arrow.scalefader:SetScript("OnUpdate", function()
 end)
 
 local function ShowScaleIndicator(val)
-  pfQuest.route.arrow.scaletext:SetText(string.format("%.1fx", val))
+  pfQuest.route.arrow.scaletext:SetFormattedText("%.1fx", val)
   pfQuest.route.arrow.scaletext:SetAlpha(1)
   pfQuest.route.arrow.scaletext:Show()
   pfQuest.route.arrow.scalefader.fadetime = GetTime()

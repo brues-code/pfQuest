@@ -644,7 +644,7 @@ function tracker.ButtonEvent(self)
         if objNum and objNeeded then
           local r, g, b = pfMap.tooltip:GetColor(objNum, objNeeded)
           self.objectives[i]:SetTextColor(r + 0.2, g + 0.2, b + 0.2)
-          self.objectives[i]:SetText(string.format("|cffffffff- %s:|r %s/%s", obj, objNum, objNeeded))
+          self.objectives[i]:SetFormattedText("|cffffffff- %s:|r %s/%s", obj, objNum, objNeeded)
         else
           self.objectives[i]:SetTextColor(0.8, 0.8, 0.8)
           self.objectives[i]:SetText("|cffffffff- " .. text)
@@ -662,8 +662,8 @@ function tracker.ButtonEvent(self)
     self.tracked = watched
     self.level = tonumber(level)
     self.perc = percent
-    self.text:SetText(
-      string.format("%s%s |cffaaaaaa(%s%s%%|cffaaaaaa)|r", showlevel, title or "", colorperc or "", ceil(percent))
+    self.text:SetFormattedText(
+      "%s%s |cffaaaaaa(%s%s%%|cffaaaaaa)|r", showlevel, title or "", colorperc or "", ceil(percent)
     )
     self.text:SetTextColor(color.r, color.g, color.b)
     self.tooltip =

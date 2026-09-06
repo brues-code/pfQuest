@@ -364,7 +364,7 @@ function pfQuestConfig:CreateConfigEntries(config)
 
         local val = tonumber(pfQuest_config[config]) or tonumber(default) or 1
         frame.input:SetValue(val)
-        frame.value:SetText(string.format("%.1fx", val))
+        frame.value:SetFormattedText("%.1fx", val)
 
         frame.input.updating = false
         frame.input:SetScript("OnValueChanged", function()
@@ -380,7 +380,7 @@ function pfQuestConfig:CreateConfigEntries(config)
           this:SetValue(val)
 
           pfQuest_config[this.config] = tostring(val)
-          frame.value:SetText(string.format("%.1fx", val))
+          frame.value:SetFormattedText("%.1fx", val)
 
           if pfQuest and pfQuest.route and pfQuest.route.arrow then
             pfQuest.route.arrow:ApplyScale()

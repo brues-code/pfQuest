@@ -344,7 +344,7 @@ end
 function pfMap:ShowTooltip(meta, tooltip)
   local catch = nil
   local catch_obj = nil
-  local tooltip = tooltip or GameTooltip
+  tooltip = tooltip or GameTooltip
 
   -- add quest data
   if meta["quest"] then
