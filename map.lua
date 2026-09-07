@@ -123,6 +123,33 @@ local function GetLayerByTexture(tex)
   end
 end
 
+-- A coordinate can stack several titles; its effective layer decides which one
+-- represents the point. Shared so the pin and the arrow agree on what a
+-- coordinate "is" -- the pin reads it to pick a texture, the arrow to decide
+-- whether the point is a route candidate at all.
+local function GetNodeLayer(tab)
+  local layer = GetLayerByTexture(tab.texture)
+
+  -- use prioritized clusters
+  if tab.cluster and tab.priority then
+    layer = layer + (10 - min(tab.priority, 10))
+  end
+
+  return layer
+end
+
+-- "x|y" -> numbers, memoised. Node coordinate keys are reused constantly, so
+-- this avoids a strfind per node per pass.
+local function ParseCoords(coords)
+  local entry = coord_cache[coords]
+  if not entry then
+    local _, _, strx, stry = strfind(coords, "(.*)|(.*)")
+    entry = { strx + 0, stry + 0 }
+    coord_cache[coords] = entry
+  end
+  return entry[1], entry[2]
+end
+
 local function minimap_indoor()
   local tempzoom = 0
   local state = 1
@@ -1083,12 +1110,7 @@ function pfMap:UpdateNode(frame, node, color, obj, distance)
   for title, tab in pairs(node) do
     pfMap.highlightdb[frame][title] = true
 
-    tab.layer = GetLayerByTexture(tab.texture)
-
-    -- use prioritized clusters
-    if tab.cluster and tab.priority then
-      tab.layer = tab.layer + (10 - min(tab.priority, 10))
-    end
+    tab.layer = GetNodeLayer(tab)
 
     if tab.spawn and (tab.layer > frame.layer or not frame.spawn) then
       frame.updateTexture = (frame.texture ~= tab.texture)
@@ -1224,6 +1246,67 @@ function pfMap:ResizeNodes()
   end
 end
 
+-- Arrow candidates, in world space, gathered from every map rather than only
+-- the one being drawn. Pins and the route line are necessarily bound to the
+-- visible map because they are screen-space work; pointing at an objective is
+-- not, so the arrow keeps its own list and can aim at a zone the player is not
+-- currently looking at.
+--
+-- Entries deliberately mirror the route tuple's layout at [3] node, [4]
+-- distance and [5] watched, so route.lua's sortfunc orders them unchanged.
+local function BuildWorldCandidates()
+  local list = pfQuest.route.worldcoords
+  for i = table.getn(list), 1, -1 do
+    list[i] = nil
+  end
+
+  if pfQuest_config["arrow"] == "0" then
+    return
+  end
+
+  local cluster = pfQuest_config["routecluster"] == "1"
+  local ender = pfQuest_config["routeender"] == "1"
+  local starter = pfQuest_config["routestarter"] == "1"
+
+  for addon in pairs(pfMap.nodes) do
+    for map, coordlist in pairs(pfMap.nodes[addon]) do
+      for coords, node in pairs(coordlist) do
+        -- the entry representing this coordinate, by the same rule the pin uses.
+        -- The layer is stamped onto the entry exactly as UpdateNode does it:
+        -- route.IsTarget compares node.layer, and a node outside the drawn map
+        -- never reaches UpdateNode to have it filled in.
+        local best, bestlayer
+        for _, tab in pairs(node) do
+          tab.layer = GetNodeLayer(tab)
+          if tab.spawn and (not best or tab.layer > bestlayer) then
+            best, bestlayer = tab, tab.layer
+          end
+        end
+
+        if
+          best
+          and (
+            (cluster and bestlayer >= 9)
+            or (ender and bestlayer == 4)
+            or (starter and bestlayer == 1 and best.texture)
+            or (starter and bestlayer == 2)
+            or best.arrow == true
+          )
+        then
+          local x, y = ParseCoords(coords)
+          local continent, wx, wy = pfMap:GetWorldPos(map, x, y)
+          if continent then
+            local questid = best.questid
+            local qdata = questid and pfQuest.questlog and pfQuest.questlog[questid]
+            local watched = qdata and qdata.qlogid and IsQuestWatched(qdata.qlogid) or nil
+            table.insert(list, { wx, wy, best, 0, watched, questid, continent })
+          end
+        end
+      end
+    end
+  end
+end
+
 function pfMap:UpdateNodes()
   pfQuest:Debug("Update Nodes")
 
@@ -1236,6 +1319,11 @@ function pfMap:UpdateNodes()
   -- stays at 0px height if UpdateNodes only ever fires with map=nil.
   pfQuest.tracker.Reset()
   pfQuest.route:Reset()
+
+  -- Rebuild arrow candidates before the map check: they span every zone, so
+  -- they must survive a nil map (continent view, or a zone with no database
+  -- entry) that legitimately stops pins and the route line from drawing.
+  BuildWorldCandidates()
 
   if not map then
     if pfQuest.tracker and pfQuest.tracker.DoLayout then
@@ -1269,14 +1357,7 @@ function pfMap:UpdateNodes()
         end
 
         -- set position (use cached coord parse to avoid strfind alloc)
-        local x, y
-        if coord_cache[coords] then
-          x, y = coord_cache[coords][1], coord_cache[coords][2]
-        else
-          local _, _, strx, stry = strfind(coords, "(.*)|(.*)")
-          x, y = strx + 0, stry + 0
-          coord_cache[coords] = { x, y }
-        end
+        local x, y = ParseCoords(coords)
 
         -- write points to the route plan
         if
@@ -1414,14 +1495,7 @@ function pfMap:UpdateMinimap()
     -- hide minimap nodes in continent view
     if data[mapID] and minimap_sizes[mapID] and pfMap:HasMinimap(mapID) then
       for coords, node in pairs(data[mapID]) do
-        local x, y
-        if coord_cache[coords] then
-          x, y = coord_cache[coords][1], coord_cache[coords][2]
-        else
-          local _, _, strx, stry = strfind(coords, "(.*)|(.*)")
-          x, y = strx + 0, stry + 0
-          coord_cache[coords] = { x, y }
-        end
+        local x, y = ParseCoords(coords)
 
         local xPos = (x - xPlayer) * xDraw
         local yPos = (y - yPlayer) * yDraw

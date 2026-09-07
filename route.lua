@@ -147,6 +147,11 @@ pfQuest.route = CreateFrame("Frame", "pfQuestRoute", WorldFrame)
 pfQuest.route.firstnode = nil
 pfQuest.route.coords = {}
 
+-- Arrow candidates in absolute world coordinates, spanning every zone. Kept
+-- apart from `coords`, which is map-relative because it draws the route line
+-- on the world map. map.lua fills this; the arrow is the only consumer.
+pfQuest.route.worldcoords = {}
+
 pfQuest.route.Reset = function(self)
   self.coords = {}
   self.firstnode = nil
@@ -252,7 +257,70 @@ local function sortfunc(a, b)
   end
   return a[4] < b[4]
 end
+-- Refresh yard distances for the world candidates and bring the best to the
+-- front. Driven by the player's world position rather than the map, so it keeps
+-- working in a zone the world map cannot place the player in -- which is the
+-- whole reason these live separately from `coords`. Candidates on another
+-- continent get DIST_FAR so they sort last without a nil creeping into sortfunc.
+function pfQuest.route:UpdateWorldTarget(pNorth, pWest, pContinent)
+  local list = self.worldcoords
+  for i = 1, table.getn(list) do
+    local candidate = list[i]
+    if candidate[7] == pContinent then
+      local dNorth, dWest = candidate[1] - pNorth, candidate[2] - pWest
+      candidate[4] = sqrt(dNorth * dNorth + dWest * dWest)
+    else
+      candidate[4] = DIST_FAR
+    end
+  end
+
+  table.sort(list, sortfunc)
+
+  -- Honor an explicit target the same way the map-relative list does. This is
+  -- what a node click sets, and what an addon pushing a waypoint through
+  -- pfMap:AddNode + route.SetTarget relies on (TurtleGuide does exactly that).
+  -- Without it the arrow silently ignores the request and points at whichever
+  -- objective happens to be nearest.
+  if targetTitle and list[1] and not pfQuest.route.IsTarget(list[1][3]) then
+    for i = 2, table.getn(list) do
+      if pfQuest.route.IsTarget(list[i][3]) then
+        table.insert(list, 1, table.remove(list, i))
+        break
+      end
+    end
+  end
+end
+
 pfQuest.route:SetScript("OnUpdate", function()
+  -- World-space arrow targeting, deliberately ahead of the map-driven throttles
+  -- below and on its own clock. UnitPosition works in any zone, so this keeps
+  -- ranking where the world map cannot place the player -- and those throttles
+  -- key off map position, which never changes on a continent view and would
+  -- return early forever.
+  --
+  -- Visibility is decided here rather than in the arrow itself because a hidden
+  -- frame gets no OnUpdate: if the arrow owned this, it could never show itself
+  -- again once hidden, and the ranking it depends on would stop too.
+  if not this.worldtick or this.worldtick < GetTime() then
+    this.worldtick = GetTime() + 0.2
+
+    local pWest, pNorth, pZ, pContinent = UnitPosition("player")
+    if pNorth then
+      this:UpdateWorldTarget(pNorth, pWest, pContinent)
+
+      local best = this.worldcoords[1]
+      if
+        best
+        and best[7] == pContinent
+        and pfQuest_config["arrow"] == "1"
+        and not this.arrow:IsShown()
+        and GetTime() > completed + 1
+      then
+        this.arrow:Show()
+      end
+    end
+  end
+
   local xplayer, yplayer = GetPlayerMapPosition("player")
   local wrongmap = xplayer == 0 and yplayer == 0 and true or nil
   local curpos = xplayer + yplayer
@@ -320,17 +388,6 @@ pfQuest.route:SetScript("OnUpdate", function()
     end
   end
 
-  -- show arrow when route exists and is stable
-  if
-    not wrongmap
-    and this.coords[1]
-    and this.coords[1][4]
-    and not this.arrow:IsShown()
-    and pfQuest_config["arrow"] == "1"
-    and GetTime() > completed + 1
-  then
-    this.arrow:Show()
-  end
 
   -- abort without any nodes or distances
   if not this.coords[1] or not this.coords[1][4] or pfQuest_config["routes"] == "0" then
@@ -472,24 +529,16 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
     return
   end
 
-  local target = this.parent.coords and this.parent.coords[1] and this.parent.coords[1][4] and this.parent.coords[1]
-    or nil
-
-  -- Resolve both ends in world space. UnitPosition and GetWorldPosFromMapPos
-  -- share axes (x north, y west) and Map.dbc continent ids, so the delta is
-  -- true yards and stays correct whichever zone the world map happens to show.
+  -- Ranking and visibility are owned by pfQuest.route's own handler, which runs
+  -- even while this frame is hidden. Here we only render the chosen target.
   local pWest, pNorth, pZ, pContinent = UnitPosition("player")
-  local tContinent, tNorth, tWest
-  if target then
-    tContinent, tNorth, tWest = pfMap:GetWorldPos(target[7], target[1], target[2])
-  end
+  local target = this.parent.worldcoords[1]
 
   -- disable arrow without a target the player can actually be pointed at
   if
     not target
     or not pNorth
-    or not tContinent
-    or tContinent ~= pContinent
+    or target[7] ~= pContinent
     or pfQuest_config["arrow"] == "0"
   then
     if invalid and invalid < GetTime() then
@@ -506,7 +555,9 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
   -- GetPlayerFacing is 0 at north and increases toward west, and world x/y are
   -- north/west, so atan2(west, north) is a bearing in that same frame. The
   -- difference is how far the target sits from where the player is looking.
-  local dNorth, dWest = tNorth - pNorth, tWest - pWest
+  local dNorth, dWest = target[1] - pNorth, target[2] - pWest
+  -- computed live rather than reusing the ranking distance in target[4], which
+  -- only refreshes on the throttle above and would make the readout step
   local yards = sqrt(dNorth * dNorth + dWest * dWest)
   local angle = math.atan2(dWest, dNorth) - GetPlayerFacing()
 
@@ -526,7 +577,11 @@ pfQuest.route.arrow:SetScript("OnUpdate", function()
   area = min(20, area)
   area = (area / 10) + 1
 
-  local alpha = target[4] - area
+  -- Fade the arrow and reveal the node icon as the player closes in. The old
+  -- thresholds were map percent, where a unit is roughly 30-50 yards, so the
+  -- same "practically on top of it" band lands near 50-150 yards -- still
+  -- scaled by node priority the way it always was.
+  local alpha = yards / (area * 50)
   alpha = alpha > 1 and 1 or alpha
   alpha = alpha < 0.5 and 0.5 or alpha
 
