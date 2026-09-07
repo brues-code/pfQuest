@@ -1269,6 +1269,14 @@ local function BuildWorldCandidates()
   local starter = pfQuest_config["routestarter"] == "1"
 
   for addon in pairs(pfMap.nodes) do
+    -- The layer rules below describe pfQuest's own nodes, and a layer is
+    -- derived from a texture path -- so a foreign addon reusing one of our
+    -- icons would land on layer 9 or 4 and start competing for the arrow by
+    -- accident. Restrict them to our own namespaces (quest nodes, database
+    -- results, and the TRACK_<list> meta trackers) and let anyone else opt in
+    -- deliberately with arrow = true, which is the way in that AddNode offers.
+    local own = (addon == "PFQUEST" or addon == "PFDB" or strfind(addon, "^TRACK_")) and true or nil
+
     for map, coordlist in pairs(pfMap.nodes[addon]) do
       for coords, node in pairs(coordlist) do
         -- the entry representing this coordinate, by the same rule the pin uses.
@@ -1286,11 +1294,16 @@ local function BuildWorldCandidates()
         if
           best
           and (
-            (cluster and bestlayer >= 9)
-            or (ender and bestlayer == 4)
-            or (starter and bestlayer == 1 and best.texture)
-            or (starter and bestlayer == 2)
-            or best.arrow == true
+            best.arrow == true
+            or (
+              own
+              and (
+                (cluster and bestlayer >= 9)
+                or (ender and bestlayer == 4)
+                or (starter and bestlayer == 1 and best.texture)
+                or (starter and bestlayer == 2)
+              )
+            )
           )
         then
           local x, y = ParseCoords(coords)
