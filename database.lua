@@ -1495,30 +1495,45 @@ function pfDatabase:SearchQuestID(id, meta, maps)
     if objectives then
       for i = 1, objectives, 1 do
         local text, type, done = GetQuestLogLeaderBoard(i, meta["qlogid"])
-        local objid = GetQuestLogLeaderBoardID(i, meta["qlogid"])
+        -- `kind` carries the sign of the quest record's RequiredNPCOrGo, so it
+        -- states authoritatively whether the id names a creature or a
+        -- gameobject. Do not infer that from db table membership: about a
+        -- quarter of all ids exist in both units and objects (2102 is both
+        -- Dragonmaw Grunt and Cathedral Square), so a membership test simply
+        -- picks whichever table happens to be checked first.
+        local objid, kind = GetQuestLogLeaderBoardID(i, meta["qlogid"])
 
-        if type == "monster" then
-          local _, _, _, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
-          -- text doesn't always match the kill template (e.g. "use X on Y"
-          -- objectives also come back as type "monster"); skip when it doesn't
-          -- to match the original behaviour where GetIDByName(nil) was a no-op
-          if objNum and objNeeded then
-            local state = ( objNum + 0 >= objNeeded + 0 or done ) and "DONE" or "PROG"
-
-            -- "monster" kind covers both creatures and gameobjects in 1.12
-            if units[objid] then
-              parse_obj["U"][objid] = state
-            elseif objects[objid] then
-              parse_obj["O"][objid] = state
+        if objid then
+          -- `type` decides how progress is read; `kind` decides where it goes.
+          local state
+          if type == "monster" then
+            -- text doesn't always match the kill template (e.g. "use X on Y"
+            -- objectives also come back as type "monster"); leave state unset
+            -- when it doesn't, matching the original GetIDByName(nil) no-op
+            local _, _, _, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
+            if objNum and objNeeded then
+              state = ( objNum + 0 >= objNeeded + 0 or done ) and "DONE" or "PROG"
             end
+          elseif type == "item" then
+            local _, _, _, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
+            if objNum and objNeeded then
+              state = ( objNum + 0 >= objNeeded + 0 or done ) and "DONE" or "PROG"
+            end
+          elseif type == "event" then
+            -- no "n/m" count in the text, so the done flag is the only signal.
+            -- Without this an event objective never reached parse_obj and its
+            -- pin stayed on the map until the whole quest completed.
+            state = done and "DONE" or "PROG"
           end
-        end
 
-        if type == "item" then
-          local _, _, _, objNum, objNeeded = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
-          if objNum and objNeeded then
-            local state = ( objNum + 0 >= objNeeded + 0 or done ) and "DONE" or "PROG"
-            if items[objid] then
+          -- No db existence check is needed here: the consumers below only
+          -- look up ids the quest itself lists, so a stray entry is never read.
+          if state then
+            if kind == "monster" then
+              parse_obj["U"][objid] = state
+            elseif kind == "object" then
+              parse_obj["O"][objid] = state
+            elseif kind == "item" then
               parse_obj["I"][objid] = state
             end
           end
