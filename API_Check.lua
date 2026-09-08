@@ -28,8 +28,8 @@ do
     headline = "|cff33ffccpf|cffffffffQuest|r has been disabled."
     detail = "The ClassicAPI DLL isn't loaded. Download the latest release from:"
   elseif CLASSIC_API_VERSION < PFQUEST_CLASSIC_API_MIN then
-    headline = "|cff33ffccpf|cffffffffQuest|r cannot run on this ClassicAPI."
-    detail = "ClassicAPI " .. FormatVersion(PFQUEST_CLASSIC_API_MIN) .. " or newer is required -- any errors alongside this one are the APIs it is missing. Download the latest release from:"
+    headline = "|cff33ffccpf|cffffffffQuest|r will not work correctly on ClassicAPI " .. FormatVersion(CLASSIC_API_VERSION) .. "."
+    detail = FormatVersion(PFQUEST_CLASSIC_API_MIN) .. " or newer is required -- any errors alongside this one are the APIs it is missing. Download the latest release from:"
   end
 
   if detail then
