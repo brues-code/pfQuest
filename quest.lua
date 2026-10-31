@@ -626,36 +626,6 @@ function pfQuest:ResetAll()
   end
 end
 
--- register popup dialog to copy urls
-StaticPopupDialogs["PFQUEST_URLCOPY"] = {
-  text = "|cff33ffccpf|cffffffffQuest " .. pfQuest_Loc["Online Search"],
-  button1 = "Close",
-  hasEditBox = 1,
-  hasWideEditBox = 1,
-  timeout = 0,
-  exclusive = 1,
-  whileDead = 1,
-  hideOnEscape = 1,
-  OnShow = function()
-    local editBox = _G[this:GetName() .. "WideEditBox"]
-    editBox:SetText(StaticPopupDialogs["PFQUEST_URLCOPY"].data)
-    editBox:HighlightText()
-  end,
-  OnHide = function()
-    _G[this:GetName() .. "WideEditBox"]:SetText("")
-  end,
-  EditBoxOnEnterPressed = function()
-    this:GetParent():Hide()
-  end,
-  EditBoxOnEscapePressed = function()
-    this:GetParent():Hide()
-  end,
-  EditBoxOnTextChanged = function()
-    this:SetText(StaticPopupDialogs["PFQUEST_URLCOPY"].data)
-    this:HighlightText()
-  end,
-}
-
 function pfQuest:AddQuestLogIntegration()
   if pfQuest_config["questlogbuttons"] == "0" then
     return
@@ -675,17 +645,8 @@ function pfQuest:AddQuestLogIntegration()
   pfQuest.buttonOnline:SetSize(18, 15)
   pfQuest.buttonOnline:SetPoint("TOPRIGHT", dockFrame, "TOPRIGHT", -12, -10)
   pfQuest.buttonOnline:SetScript("OnClick", function()
-    if pfUI and pfUI.chat then
-      pfUI.chat.urlcopy.text:SetText(pfQuest.dburl .. (this:GetID() or 0))
-      pfUI.chat.urlcopy:Show()
-    else
-      StaticPopupDialogs["PFQUEST_URLCOPY"].data = pfQuest.dburl .. (this:GetID() or 0)
-      local dialog = StaticPopup_Show("PFQUEST_URLCOPY")
-      _G[dialog:GetName() .. "Button1"]:ClearAllPoints()
-      _G[dialog:GetName() .. "Button1"]:SetPoint("BOTTOM", dialog, "BOTTOM", 0, 16)
-      _G[dialog:GetName() .. "WideEditBox"]:SetScript("OnTextChanged", StaticPopup_EditBoxOnTextChanged)
-      dialog:SetWidth(420)
-    end
+    CopyToClipboard(pfQuest.dburl .. (this:GetID() or 0))
+    UIErrorsFrame:AddMessage(pfQuest_Loc["Copied to clipboard"], 1, 1, 0, 1)
   end)
 
   pfQuest.buttonOnline.txt = pfQuest.buttonOnline:CreateFontString("pfQuestIDButton", "HIGH", "GameFontWhite")
