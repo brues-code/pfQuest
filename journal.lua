@@ -41,8 +41,25 @@ local function OnEnter()
 end
 
 local function OnLeave()
+  -- la croix est enfant de la ligne : si la souris est encore dans la ligne, on ne cache rien
+  if MouseIsOver(this) then
+    return
+  end
+
   this.remove:Hide()
   this.bg:Hide()
+  GameTooltip:Hide()
+end
+
+local function RemoveOnLeave()
+  -- quand on quitte la croix, on ne cache tout que si la souris sort aussi de la ligne
+  local entry = this.entry
+  if MouseIsOver(entry) then
+    return
+  end
+
+  this:Hide()
+  entry.bg:Hide()
   GameTooltip:Hide()
 end
 
@@ -65,6 +82,7 @@ end
 local function RemoveOnClick()
   if this.entry.id then
     pfQuest_history[this.entry.id] = nil
+    GameTooltip:Hide()
     this.view:ReloadJournal()
   end
 end
@@ -100,6 +118,7 @@ local function CreateEntry(self, index)
   self[index].remove:SetWidth(20)
   self[index].remove:Hide()
   self[index].remove:SetScript("OnClick", RemoveOnClick)
+  self[index].remove:SetScript("OnLeave", RemoveOnLeave)
   self[index].remove.entry = self[index]
   self[index].remove.view = self
   self[index].remove.texture = self[index].remove:CreateTexture("pfQuestionDialogCloseTex")
@@ -118,7 +137,7 @@ local function UpdateEntry(self, index)
     self[index]:Show()
   elseif self[index].id then
     local qid = tonumber(self[index].id) or UNKNOWN
-    local name = pfDatabase:GetQuestText(self[index].id, "T") or self[index].id
+    local name = pfDB["quests"]["loc"][self[index].id] and pfDB["quests"]["loc"][self[index].id]["T"] or self[index].id
     local log = pfQuest_history[self[index].id][1]
     local level = pfQuest_history[self[index].id][2]
     self[index].text:SetText(
